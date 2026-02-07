@@ -18,7 +18,8 @@ fn quorum_cert_forms_correctly() {
         signatures: sigs,
     };
 
-    assert_eq!(qc.signatures.len(), 3);
+    // >= 2f+1 signatures should be required for a valid QC
+    assert_eq!(qc.signatures.len(), 2*f+1);
 }
 
 #[test]
