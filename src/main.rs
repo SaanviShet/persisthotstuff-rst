@@ -11,6 +11,7 @@ fn main() {
         current_view: 4,
         block_tree: HashMap::new(),
         high_qc: None,
+        vote_pool: HashMap::new(),
     };
 
     // Genesis
