@@ -1,7 +1,7 @@
 use persisthotstuff_rst::config::Config;
 use persisthotstuff_rst::replica::Replica;
 use persisthotstuff_rst::types::*;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 #[test]
 fn leader_proposes_block() {
@@ -10,9 +10,9 @@ fn leader_proposes_block() {
     let mut replica = Replica {
         config: config.clone(),
         current_view: 1,
-        block_tree: HashMap::new(),
+        block_tree: BTreeMap::new(),
         high_qc: None,
-        vote_pool: HashMap::new(),
+        vote_pool: BTreeMap::new(),
         next_hash: 0,
         committed_log: Vec::new(),
         committed_up_to: None,
@@ -32,9 +32,9 @@ fn non_leader_cannot_propose() {
     let mut replica = Replica {
         config: config.clone(),
         current_view: 1,
-        block_tree: HashMap::new(),
+        block_tree: BTreeMap::new(),
         high_qc: None,
-        vote_pool: HashMap::new(),
+        vote_pool: BTreeMap::new(),
         next_hash: 0,
         committed_log: Vec::new(),
         committed_up_to: None,
@@ -49,9 +49,9 @@ fn proposal_validation_accepts_valid() {
     let mut leader = Replica {
         config: leader_cfg.clone(),
         current_view: 1,
-        block_tree: HashMap::new(),
+        block_tree: BTreeMap::new(),
         high_qc: None,
-        vote_pool: HashMap::new(),
+        vote_pool: BTreeMap::new(),
         next_hash: 0,
         committed_log: Vec::new(),
         committed_up_to: None,
@@ -61,9 +61,9 @@ fn proposal_validation_accepts_valid() {
     let mut follower = Replica {
         config: follower_cfg.clone(),
         current_view: 1,
-        block_tree: HashMap::new(),
+        block_tree: BTreeMap::new(),
         high_qc: None,
-        vote_pool: HashMap::new(),
+        vote_pool: BTreeMap::new(),
         next_hash: 0,
         committed_log: Vec::new(),
         committed_up_to: None,
@@ -81,9 +81,9 @@ fn proposal_validation_rejects_invalid_qc() {
     let mut leader = Replica {
         config: leader_cfg.clone(),
         current_view: 1,
-        block_tree: HashMap::new(),
+        block_tree: BTreeMap::new(),
         high_qc: None,
-        vote_pool: HashMap::new(),
+        vote_pool: BTreeMap::new(),
         next_hash: 0,
         committed_log: Vec::new(),
         committed_up_to: None,
@@ -93,9 +93,9 @@ fn proposal_validation_rejects_invalid_qc() {
     let mut follower = Replica {
         config: follower_cfg.clone(),
         current_view: 1,
-        block_tree: HashMap::new(),
+        block_tree: BTreeMap::new(),
         high_qc: None,
-        vote_pool: HashMap::new(),
+        vote_pool: BTreeMap::new(),
         next_hash: 0,
         committed_log: Vec::new(),
         committed_up_to: None,

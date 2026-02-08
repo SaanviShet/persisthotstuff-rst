@@ -1,7 +1,9 @@
 use persisthotstuff_rst::config::Config;
 use persisthotstuff_rst::replica::Replica;
 use persisthotstuff_rst::types::*;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
+use persisthotstuff_rst::visualiser::*;
 
 #[test]
 fn three_chain_commits_block() {
@@ -10,9 +12,9 @@ fn three_chain_commits_block() {
     let mut replica = Replica {
         config: config.clone(),
         current_view: 3,
-        block_tree: HashMap::new(),
+        block_tree: BTreeMap::new(),
         high_qc: None,
-        vote_pool: HashMap::new(),
+        vote_pool: BTreeMap::new(),
         next_hash: 0,
         committed_log: Vec::new(),
         committed_up_to: None,
@@ -77,9 +79,9 @@ fn insufficient_qc_blocks_dont_commit() {
     let mut replica = Replica {
         config: config.clone(),
         current_view: 2,
-        block_tree: HashMap::new(),
+        block_tree: BTreeMap::new(),
         high_qc: None,
-        vote_pool: HashMap::new(),
+        vote_pool: BTreeMap::new(),
         next_hash: 0,
         committed_log: Vec::new(),
         committed_up_to: None,
@@ -130,9 +132,9 @@ fn insufficient_qc_blocks_dont_commit() {
 //     let mut replica = Replica {
 //         config: config.clone(),
 //         current_view: 5,
-//         block_tree: HashMap::new(),
+//         block_tree: BTreeMap::new(),
 //         high_qc: None,
-//         vote_pool: HashMap::new(),
+//         vote_pool: BTreeMap::new(),
 //         next_hash: 0,
 //         committed_log: Vec::new(),
 //         committed_up_to: None,
@@ -242,9 +244,9 @@ fn cannot_commit_same_block_twice() {
     let mut replica = Replica {
         config: config.clone(),
         current_view: 3,
-        block_tree: HashMap::new(),
+        block_tree: BTreeMap::new(),
         high_qc: None,
-        vote_pool: HashMap::new(),
+        vote_pool: BTreeMap::new(),
         next_hash: 0,
         committed_log: Vec::new(),
         committed_up_to: None,
@@ -295,24 +297,6 @@ fn cannot_commit_same_block_twice() {
         }),
     };
     replica.block_tree.insert(b2.hash, b2.clone());
-
-    // Block B3 with QC on B2
-    let b3 = Block {
-        hash: 3,
-        parent: Some(2),
-        view: 3,
-        proposer: 3,
-        qc: Some(QuorumCert {
-            block_hash: 2,
-            view: 2,
-            signatures: vec![
-                persisthotstuff_rst::crypto::sign(0),
-                persisthotstuff_rst::crypto::sign(1),
-                persisthotstuff_rst::crypto::sign(2),
-            ],
-        }),
-    };
-    replica.block_tree.insert(b3.hash, b3.clone());
 
     // Commit once
     replica.try_commit_once();

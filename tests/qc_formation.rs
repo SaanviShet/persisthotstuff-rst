@@ -9,9 +9,9 @@ fn qc_formation_from_votes() {
     let mut replica = Replica {
         config: config.clone(),
         current_view: 1,
-        block_tree: std::collections::HashMap::new(),
+        block_tree: std::collections::BTreeMap::new(),
         high_qc: None,
-        vote_pool: std::collections::HashMap::new(),
+        vote_pool: std::collections::BTreeMap::new(),
         next_hash: 0,
         committed_log: Vec::new(),
         committed_up_to: None,
