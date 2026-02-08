@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use crate::types::*;
 use crate::config::*;
 
@@ -11,9 +11,9 @@ use crate::config::*;
 pub struct Replica {
     pub config: Config,
     pub current_view: u64,
-    pub block_tree: HashMap<Hash, Block>,
+    pub block_tree: BTreeMap<Hash, Block>,
     pub high_qc: Option<QuorumCert>,
-    pub vote_pool: HashMap<Hash, Vec<Signature>>,
+    pub vote_pool: BTreeMap<Hash, Vec<Signature>>,
     pub next_hash: Hash,
     pub committed_log: Vec<Block>,
     pub committed_up_to: Option<Hash>,
@@ -152,7 +152,10 @@ impl Replica {
             }
 
             // Find B1 (child of B0)
-            let b1 = self.block_tree.values().find(|b| b.parent == Some(b0.hash))?;
+            let b1 = match self.block_tree.values().find(|b| b.parent == Some(b0.hash)) {
+                Some(b) => b,
+                None => continue, // No child found, try next candidate
+            };
             
             // B1 must have a QC
             if b1.qc.is_none() {
@@ -160,7 +163,10 @@ impl Replica {
             }
 
             // Find B2 (child of B1)
-            let b2 = self.block_tree.values().find(|b| b.parent == Some(b1.hash))?;
+            let b2 = match self.block_tree.values().find(|b| b.parent == Some(b1.hash)) {
+                Some(b) => b,
+                None => continue, // No child found, try next candidate
+            };
             
             // B2 must have a QC
             if b2.qc.is_none() {

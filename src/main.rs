@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use persisthotstuff_rst::config::Config;
 use persisthotstuff_rst::replica::Replica;
 use persisthotstuff_rst::types::*;
@@ -9,9 +9,9 @@ fn main() {
     let mut replica = Replica {
         config,
         current_view: 4,
-        block_tree: HashMap::new(),
+        block_tree: BTreeMap::new(),
         high_qc: None,
-        vote_pool: HashMap::new(),
+        vote_pool: BTreeMap::new(),
         next_hash: 5,
         committed_log: Vec::new(),
         committed_up_to: None,
