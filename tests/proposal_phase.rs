@@ -14,6 +14,8 @@ fn leader_proposes_block() {
         high_qc: None,
         vote_pool: HashMap::new(),
         next_hash: 0,
+        committed_log: Vec::new(),
+        committed_up_to: None,
     };
 
     let block_opt = replica.propose(1);
@@ -34,6 +36,8 @@ fn non_leader_cannot_propose() {
         high_qc: None,
         vote_pool: HashMap::new(),
         next_hash: 0,
+        committed_log: Vec::new(),
+        committed_up_to: None,
     };
 
     assert!(replica.propose(1).is_none());
@@ -49,6 +53,8 @@ fn proposal_validation_accepts_valid() {
         high_qc: None,
         vote_pool: HashMap::new(),
         next_hash: 0,
+        committed_log: Vec::new(),
+        committed_up_to: None,
     };
 
     let follower_cfg = Config { n: 4, f: 1, id: 2 };
@@ -59,6 +65,8 @@ fn proposal_validation_accepts_valid() {
         high_qc: None,
         vote_pool: HashMap::new(),
         next_hash: 0,
+        committed_log: Vec::new(),
+        committed_up_to: None,
     };
 
     let block = leader.propose(1).expect("leader should propose");
@@ -77,6 +85,8 @@ fn proposal_validation_rejects_invalid_qc() {
         high_qc: None,
         vote_pool: HashMap::new(),
         next_hash: 0,
+        committed_log: Vec::new(),
+        committed_up_to: None,
     };
 
     let follower_cfg = Config { n: 4, f: 1, id: 2 };
@@ -87,6 +97,8 @@ fn proposal_validation_rejects_invalid_qc() {
         high_qc: None,
         vote_pool: HashMap::new(),
         next_hash: 0,
+        committed_log: Vec::new(),
+        committed_up_to: None,
     };
 
     // Create a block with a QC that has insufficient signatures

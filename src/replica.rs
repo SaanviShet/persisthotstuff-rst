@@ -15,6 +15,8 @@ pub struct Replica {
     pub high_qc: Option<QuorumCert>,
     pub vote_pool: HashMap<Hash, Vec<Signature>>,
     pub next_hash: Hash,
+    pub committed_log: Vec<Block>,
+    pub committed_up_to: Option<Hash>,
 }
 
 use crate::visualiser::print_block_tree;
@@ -72,10 +74,7 @@ impl Replica {
         let vote = Vote { block_hash, view, signature };
         self.handle_vote(vote)
     }
-}
 
-impl Replica {
-    
     // Determines if this replica is the leader for a given view
     pub fn is_leader(&self, view: u64) -> bool {
         self.config.leader_for_view(view) == self.config.id
@@ -133,6 +132,65 @@ impl Replica {
     // Helper function to find the hash of the latest block in the block tree based on view number.
     fn latest_block_hash(&self) -> Option<Hash> {
         self.block_tree.values().max_by_key(|b| b.view).map(|b| b.hash)
+    }
+
+    // Find a block at a specific view number
+    fn get_block_at_view(&self, view: u64) -> Option<Block> {
+        self.block_tree.values().find(|b| b.view == view).cloned()
+    }
+
+    // Detect if a 3-chain exists and return the committed block (B0)
+    // Pattern: B0 <- B1 <- B2, where B1 and B2 have valid QCs
+    pub fn find_committed_block(&self) -> Option<Block> {
+        // Iterate through all blocks to find a 3-chain
+        for b0 in self.block_tree.values() {
+            // Skip if already committed
+            if let Some(committed_hash) = self.committed_up_to {
+                if b0.hash == committed_hash {
+                    continue;
+                }
+            }
+
+            // Find B1 (child of B0)
+            let b1 = self.block_tree.values().find(|b| b.parent == Some(b0.hash))?;
+            
+            // B1 must have a QC
+            if b1.qc.is_none() {
+                continue;
+            }
+
+            // Find B2 (child of B1)
+            let b2 = self.block_tree.values().find(|b| b.parent == Some(b1.hash))?;
+            
+            // B2 must have a QC
+            if b2.qc.is_none() {
+                continue;
+            }
+
+            // Valid 3-chain found
+            return Some(b0.clone());
+        }
+        None
+    }
+
+    // Execute and commit a block to the log
+    pub fn execute_and_commit(&mut self, block: Block) {
+        self.committed_log.push(block.clone());
+        self.committed_up_to = Some(block.hash);
+    }
+
+    // Try to commit once by finding and executing the earliest uncommitted block in a 3-chain
+    pub fn try_commit_once(&mut self) -> bool {
+            if let Some(block) = self.find_committed_block() {
+            self.execute_and_commit(block);
+            return true;
+        }
+        false
+    }
+
+    // Commit all possible blocks (repeatedly call try_commit_once)
+    pub fn commit_all(&mut self) {
+        while self.try_commit_once() {}
     }
 }
 

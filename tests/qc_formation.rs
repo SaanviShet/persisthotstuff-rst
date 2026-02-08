@@ -13,6 +13,8 @@ fn qc_formation_from_votes() {
         high_qc: None,
         vote_pool: std::collections::HashMap::new(),
         next_hash: 0,
+        committed_log: Vec::new(),
+        committed_up_to: None,
     };
 
     let block_hash = 42u64;

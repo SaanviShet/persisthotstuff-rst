@@ -13,6 +13,8 @@ fn main() {
         high_qc: None,
         vote_pool: HashMap::new(),
         next_hash: 5,
+        committed_log: Vec::new(),
+        committed_up_to: None,
     };
 
     // Genesis
@@ -64,5 +66,14 @@ fn main() {
 
     replica.visualize();
 
-    println!("PersistHotStuff core initialized");
+    // Try to commit blocks using the 3-chain rule
+    replica.commit_all();
+
+    println!("\n--- Committed Blocks ---");
+    for (idx, block) in replica.committed_log.iter().enumerate() {
+        println!("Commit #{}: Block {} (view {})", idx, block.hash, block.view);
+    }
+
+    println!("\nPersistHotStuff core initialized with commits");
+
 }
