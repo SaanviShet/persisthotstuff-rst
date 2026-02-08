@@ -6,7 +6,7 @@ pub type Hash = u64;
 // Each block contains a hash, a reference to its parent block,
 // the view number, the ID of the proposer, 
 // and an optional quorum certificate (QC).
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Block {
     pub hash: Hash,
     pub parent: Option<Hash>,
@@ -22,7 +22,7 @@ use crate::crypto::Signature;
 // the view number, and a 
 // vector of signatures from the replicas that signed it.
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QuorumCert {
     pub block_hash: u64,
     pub view: u64,
@@ -34,6 +34,7 @@ pub struct QuorumCert {
 // the view number, and a 
 // signature from the voter.
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Vote {
     pub block_hash: u64,
     pub view: u64,

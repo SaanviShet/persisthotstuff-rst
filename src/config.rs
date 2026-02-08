@@ -21,4 +21,9 @@ impl Config {
     pub fn quorum_size(&self) -> usize {
         2 * self.f + 1
     }
+
+    pub fn leader_for_view(&self, view: u64) -> ReplicaId {
+        let idx = (view as usize) % self.n;
+        idx as ReplicaId
+    }
 }

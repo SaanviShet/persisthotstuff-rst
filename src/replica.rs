@@ -14,10 +14,11 @@ pub struct Replica {
     pub block_tree: HashMap<Hash, Block>,
     pub high_qc: Option<QuorumCert>,
     pub vote_pool: HashMap<Hash, Vec<Signature>>,
+    pub next_hash: Hash,
 }
 
 use crate::visualiser::print_block_tree;
-use crate::crypto::{Signature, sign, verify};
+use crate::crypto::{Signature, sign, verify, verify_qc};
 use crate::types::*;
 
 impl Replica {
@@ -70,6 +71,68 @@ impl Replica {
         let signature = sign(replica_id);
         let vote = Vote { block_hash, view, signature };
         self.handle_vote(vote)
+    }
+}
+
+impl Replica {
+    
+    // Determines if this replica is the leader for a given view
+    pub fn is_leader(&self, view: u64) -> bool {
+        self.config.leader_for_view(view) == self.config.id
+    }
+
+    // Proposes a new block if this replica is the leader for the given view. 
+    // The new block references the latest QC or 
+    // the latest block as its parent.
+    pub fn propose(&mut self, view: u64) -> Option<Block> {
+        if !self.is_leader(view) {
+            return None;
+        }
+
+        let hash = self.next_hash;
+        self.next_hash = self.next_hash.wrapping_add(1);
+
+        let parent = if let Some(qc) = &self.high_qc { Some(qc.block_hash) } else { self.latest_block_hash() };
+
+        let block = Block { hash, parent, view, proposer: self.config.id, qc: self.high_qc.clone() };
+        self.block_tree.insert(hash, block.clone());
+        Some(block)
+    }
+
+    // Validates an incoming block proposal by checking the proposer, parent existence, and QC validity.
+    pub fn validate_and_insert_proposal(&mut self, block: Block) -> bool {
+        // Check proposer is the expected leader for the view
+        let expected = self.config.leader_for_view(block.view);
+        if block.proposer != expected {
+            return false;
+        }
+
+        // If block has a parent, ensure the parent exists in our tree
+        if let Some(parent_hash) = block.parent {
+            if !self.block_tree.contains_key(&parent_hash) {
+                // Parent missing; reject proposal
+                return false;
+            }
+        }
+
+        // If the block carries a QC, validate it
+        if let Some(ref qc) = block.qc {
+            if !verify_qc(qc, self.config.quorum_size()) {
+                return false;
+            }
+            // ensure QC's block exists in our tree (sanity check)
+            if !self.block_tree.contains_key(&qc.block_hash) {
+                return false;
+            }
+        }
+
+        self.block_tree.insert(block.hash, block);
+        true
+    }
+
+    // Helper function to find the hash of the latest block in the block tree based on view number.
+    fn latest_block_hash(&self) -> Option<Hash> {
+        self.block_tree.values().max_by_key(|b| b.view).map(|b| b.hash)
     }
 }
 

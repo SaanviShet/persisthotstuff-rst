@@ -12,6 +12,7 @@ fn main() {
         block_tree: HashMap::new(),
         high_qc: None,
         vote_pool: HashMap::new(),
+        next_hash: 5,
     };
 
     // Genesis
