@@ -144,15 +144,14 @@ impl Replica {
     pub fn find_committed_block(&self) -> Option<Block> {
         // Iterate through all blocks to find a 3-chain
         for b0 in self.block_tree.values() {
-            // Skip if already committed
-            if let Some(committed_hash) = self.committed_up_to {
-                if b0.hash == committed_hash {
-                    continue;
-                }
+            // Skip if already committed (check if in log)
+            if self.committed_log.iter().any(|b| b.hash == b0.hash) {
+                continue;
             }
 
             // Find B1 (child of B0)
-            let b1 = match self.block_tree.values().find(|b| b.parent == Some(b0.hash)) {
+            let b1 = self.block_tree.values().find(|b| b.parent == Some(b0.hash));
+            let b1 = match b1 {
                 Some(b) => b,
                 None => continue, // No child found, try next candidate
             };
@@ -163,7 +162,8 @@ impl Replica {
             }
 
             // Find B2 (child of B1)
-            let b2 = match self.block_tree.values().find(|b| b.parent == Some(b1.hash)) {
+            let b2 = self.block_tree.values().find(|b| b.parent == Some(b1.hash));
+            let b2 = match b2 {
                 Some(b) => b,
                 None => continue, // No child found, try next candidate
             };

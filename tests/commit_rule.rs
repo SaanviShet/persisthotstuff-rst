@@ -125,117 +125,117 @@ fn insufficient_qc_blocks_dont_commit() {
     );
 }
 
-// #[test]
-// fn commit_log_grows_correctly() {
-//     let config = Config { n: 4, f: 1, id: 0 };
+#[test]
+fn commit_log_grows_correctly() {
+    let config = Config { n: 4, f: 1, id: 0 };
 
-//     let mut replica = Replica {
-//         config: config.clone(),
-//         current_view: 5,
-//         block_tree: BTreeMap::new(),
-//         high_qc: None,
-//         vote_pool: BTreeMap::new(),
-//         next_hash: 0,
-//         committed_log: Vec::new(),
-//         committed_up_to: None,
-//     };
+    let mut replica = Replica {
+        config: config.clone(),
+        current_view: 5,
+        block_tree: BTreeMap::new(),
+        high_qc: None,
+        vote_pool: BTreeMap::new(),
+        next_hash: 0,
+        committed_log: Vec::new(),
+        committed_up_to: None,
+    };
 
-//     // Genesis block B0
-//     let b0 = Block {
-//         hash: 0,
-//         parent: None,
-//         view: 0,
-//         proposer: 0,
-//         qc: None,
-//     };
-//     replica.block_tree.insert(b0.hash, b0);
+    // Genesis block B0
+    let b0 = Block {
+        hash: 0,
+        parent: None,
+        view: 0,
+        proposer: 0,
+        qc: None,
+    };
+    replica.block_tree.insert(b0.hash, b0);
 
-//     // B1 with QC on B0
-//     let b1 = Block {
-//         hash: 1,
-//         parent: Some(0),
-//         view: 1,
-//         proposer: 1,
-//         qc: Some(QuorumCert {
-//             block_hash: 0,
-//             view: 0,
-//             signatures: vec![
-//                 persisthotstuff_rst::crypto::sign(0),
-//                 persisthotstuff_rst::crypto::sign(1),
-//                 persisthotstuff_rst::crypto::sign(2),
-//             ],
-//         }),
-//     };
-//     replica.block_tree.insert(b1.hash, b1);
+    // B1 with QC on B0
+    let b1 = Block {
+        hash: 1,
+        parent: Some(0),
+        view: 1,
+        proposer: 1,
+        qc: Some(QuorumCert {
+            block_hash: 0,
+            view: 0,
+            signatures: vec![
+                persisthotstuff_rst::crypto::sign(0),
+                persisthotstuff_rst::crypto::sign(1),
+                persisthotstuff_rst::crypto::sign(2),
+            ],
+        }),
+    };
+    replica.block_tree.insert(b1.hash, b1);
 
-//     // B2 with QC on B1
-//     let b2 = Block {
-//         hash: 2,
-//         parent: Some(1),
-//         view: 2,
-//         proposer: 2,
-//         qc: Some(QuorumCert {
-//             block_hash: 1,
-//             view: 1,
-//             signatures: vec![
-//                 persisthotstuff_rst::crypto::sign(0),
-//                 persisthotstuff_rst::crypto::sign(1),
-//                 persisthotstuff_rst::crypto::sign(2),
-//             ],
-//         }),
-//     };
-//     replica.block_tree.insert(b2.hash, b2);
+    // B2 with QC on B1
+    let b2 = Block {
+        hash: 2,
+        parent: Some(1),
+        view: 2,
+        proposer: 2,
+        qc: Some(QuorumCert {
+            block_hash: 1,
+            view: 1,
+            signatures: vec![
+                persisthotstuff_rst::crypto::sign(0),
+                persisthotstuff_rst::crypto::sign(1),
+                persisthotstuff_rst::crypto::sign(2),
+            ],
+        }),
+    };
+    replica.block_tree.insert(b2.hash, b2);
 
-//     // B3 with QC on B2
-//     let b3 = Block {
-//         hash: 3,
-//         parent: Some(2),
-//         view: 3,
-//         proposer: 3,
-//         qc: Some(QuorumCert {
-//             block_hash: 2,
-//             view: 2,
-//             signatures: vec![
-//                 persisthotstuff_rst::crypto::sign(0),
-//                 persisthotstuff_rst::crypto::sign(1),
-//                 persisthotstuff_rst::crypto::sign(2),
-//             ],
-//         }),
-//     };
-//     replica.block_tree.insert(b3.hash, b3);
+    // B3 with QC on B2
+    let b3 = Block {
+        hash: 3,
+        parent: Some(2),
+        view: 3,
+        proposer: 3,
+        qc: Some(QuorumCert {
+            block_hash: 2,
+            view: 2,
+            signatures: vec![
+                persisthotstuff_rst::crypto::sign(0),
+                persisthotstuff_rst::crypto::sign(1),
+                persisthotstuff_rst::crypto::sign(2),
+            ],
+        }),
+    };
+    replica.block_tree.insert(b3.hash, b3);
 
-//     // B4 with QC on B3
-//     let b4 = Block {
-//         hash: 4,
-//         parent: Some(3),
-//         view: 4,
-//         proposer: 0,
-//         qc: Some(QuorumCert {
-//             block_hash: 3,
-//             view: 3,
-//             signatures: vec![
-//                 persisthotstuff_rst::crypto::sign(0),
-//                 persisthotstuff_rst::crypto::sign(1),
-//                 persisthotstuff_rst::crypto::sign(2),
-//             ],
-//         }),
-//     };
-//     replica.block_tree.insert(b4.hash, b4);
+    // B4 with QC on B3
+    let b4 = Block {
+        hash: 4,
+        parent: Some(3),
+        view: 4,
+        proposer: 0,
+        qc: Some(QuorumCert {
+            block_hash: 3,
+            view: 3,
+            signatures: vec![
+                persisthotstuff_rst::crypto::sign(0),
+                persisthotstuff_rst::crypto::sign(1),
+                persisthotstuff_rst::crypto::sign(2),
+            ],
+        }),
+    };
+    replica.block_tree.insert(b4.hash, b4);
 
-//     // Commit all possible blocks
-//     replica.commit_all();
+    // Commit all possible blocks
+    replica.commit_all();
 
-//     // Should have committed B0 (3-chain: B0 <- B1 <- B2)
-//     // and B1 (3-chain: B1 <- B2 <- B3) and B2 (3-chain: B2 <- B3 <- B4)
-//     assert!(
-//         replica.committed_log.len() >= 1,
-//         "Should have at least one committed block"
-//     );
-//     assert_eq!(
-//         replica.committed_log[0].hash, 0,
-//         "First committed block should be B0"
-//     );
-// }
+    // Should have committed B0 (3-chain: B0 <- B1 <- B2)
+    // and B1 (3-chain: B1 <- B2 <- B3) and B2 (3-chain: B2 <- B3 <- B4)
+    assert!(
+        replica.committed_log.len() >= 1,
+        "Should have at least one committed block"
+    );
+    assert_eq!(
+        replica.committed_log[0].hash, 0,
+        "First committed block should be B0"
+    );
+}
 
 #[test]
 fn cannot_commit_same_block_twice() {
