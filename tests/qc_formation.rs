@@ -12,6 +12,7 @@ fn qc_formation_from_votes() {
         block_tree: std::collections::HashMap::new(),
         high_qc: None,
         vote_pool: std::collections::HashMap::new(),
+        next_hash: 0,
     };
 
     let block_hash = 42u64;
@@ -21,7 +22,7 @@ fn qc_formation_from_votes() {
         let qc_opt = replica.receive_vote_from_replica(id as u64, block_hash, view);
         if let Some(qc) = qc_opt {
             // QC should have at least 2f+1 signatures, and the high QC should be updated to the new QC.
-            assert!(qc.signatures.len() >= 2*config.f+1, "QC should have at least 2*{}+1 signatures", config.f);
+            assert!(qc.signatures.len() >= 2*config.f+1, "QC doesn't have enough signatures");
             assert_eq!(replica.high_qc.as_ref().unwrap().block_hash, block_hash);
             return;
         }

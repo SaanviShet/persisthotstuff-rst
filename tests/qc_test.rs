@@ -19,7 +19,7 @@ fn quorum_cert_forms_correctly() {
     };
 
     // QC should have at least 2f+1 signatures
-    assert!(qc.signatures.len() >= 2*f+1, "QC should have at least 2*{}+1 signatures", f);
+    assert!(qc.signatures.len()>=config.quorum_size(), "QC doesn't have enough signatures");
 }
 
 #[test]
