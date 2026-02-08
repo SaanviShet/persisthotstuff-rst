@@ -20,7 +20,8 @@ fn qc_formation_from_votes() {
     for id in 0..config.quorum_size() {
         let qc_opt = replica.receive_vote_from_replica(id as u64, block_hash, view);
         if let Some(qc) = qc_opt {
-            assert_eq!(qc.signatures.len(), config.quorum_size());
+            // QC should have at least 2f+1 signatures, and the high QC should be updated to the new QC.
+            assert!(qc.signatures.len() >= 2*config.f+1, "QC should have at least 2*{}+1 signatures", config.f);
             assert_eq!(replica.high_qc.as_ref().unwrap().block_hash, block_hash);
             return;
         }

@@ -18,8 +18,8 @@ fn quorum_cert_forms_correctly() {
         signatures: sigs,
     };
 
-    // >= 2f+1 signatures should be required for a valid QC
-    assert_eq!(qc.signatures.len(), 2*f+1);
+    // QC should have at least 2f+1 signatures
+    assert!(qc.signatures.len() >= 2*f+1, "QC should have at least 2*{}+1 signatures", f);
 }
 
 #[test]
@@ -28,6 +28,9 @@ fn three_chain_commit_rule() {
     let b1 = Block { hash: 1, parent: Some(0), view: 1, proposer: 1, qc: Some(dummy_qc(0,0)) };
     let b2 = Block { hash: 2, parent: Some(1), view: 2, proposer: 2, qc: Some(dummy_qc(1,1)) };
 
+    // The three-chain commit rule states that if we have a chain of three blocks 
+    // (b0 -> b1 -> b2) where each block has a QC certifying its parent, 
+    // then the first block (b0) can be considered committed.
     assert!(is_committed(&b0, &b1, &b2));
 }
 

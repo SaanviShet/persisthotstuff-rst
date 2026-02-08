@@ -35,6 +35,7 @@ impl Replica {
         println!("==============================");
     }
 
+    // Handles an incoming vote, verifies it, and updates the vote pool.
     pub fn handle_vote(&mut self, vote: Vote) -> Option<QuorumCert> {
         if !verify(&vote.signature) {
             return None;
@@ -52,6 +53,7 @@ impl Replica {
         self.try_form_qc(vote.block_hash, vote.view)
     }
 
+    // Checks if enough votes have been collected for a block hash to form a QC.
     fn try_form_qc(&mut self, block_hash: Hash, view: u64) -> Option<QuorumCert> {
         if let Some(sigs) = self.vote_pool.get(&block_hash) {
             if sigs.len() >= self.config.quorum_size() {
@@ -63,6 +65,7 @@ impl Replica {
         None
     }
 
+    // Simulates receiving a vote from another replica, creates a Vote object, and processes it.
     pub fn receive_vote_from_replica(&mut self, replica_id: ReplicaId, block_hash: Hash, view: u64) -> Option<QuorumCert> {
         let signature = sign(replica_id);
         let vote = Vote { block_hash, view, signature };
