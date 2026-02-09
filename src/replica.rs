@@ -17,6 +17,8 @@ pub struct Replica {
     pub next_hash: Hash,
     pub committed_log: Vec<Block>,
     pub committed_up_to: Option<Hash>,
+    pub timeout_ms: u64,
+    pub view_start_time: u128,
 }
 
 use crate::visualiser::print_block_tree;
@@ -126,6 +128,7 @@ impl Replica {
         }
 
         self.block_tree.insert(block.hash, block);
+        self.on_inserting_block_proposal(); // Reset timer on valid proposal
         true
     }
 
@@ -178,12 +181,15 @@ impl Replica {
         }
         None
     }
-
+// ***************
     // Execute and commit a block to the log
     pub fn execute_and_commit(&mut self, block: Block) {
         self.committed_log.push(block.clone());
         self.committed_up_to = Some(block.hash);
+        // view change on commit
+        self.on_commit();
     }
+    // ******************
 
     // Try to commit once by finding and executing the earliest uncommitted block in a 3-chain
     pub fn try_commit_once(&mut self) -> bool {
@@ -197,6 +203,60 @@ impl Replica {
     // Commit all possible blocks (repeatedly call try_commit_once)
     pub fn commit_all(&mut self) {
         while self.try_commit_once() {}
+    }
+
+    // ===== Pacemaker & View Change Methods =====
+
+    // Get current time in milliseconds (mock: returns incrementing counter)
+    pub fn current_time_ms() -> u128 {
+        // In a real system, use std::time::SystemTime
+        // For testing, we use a deterministic approach
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    }
+
+    // Start a new view (reset timer)
+    pub fn start_view(&mut self, view: u64) {
+        self.current_view = view;
+        self.view_start_time = Self::current_time_ms();
+    }
+
+    // Check if view has timed out
+    pub fn is_view_timeout(&self) -> bool {
+        let elapsed = Self::current_time_ms().saturating_sub(self.view_start_time);
+        elapsed >= self.timeout_ms as u128
+    }
+
+    // Handle a view timeout (move to next view)
+    pub fn on_view_timeout(&mut self) {
+        self.current_view += 1;
+        self.view_start_time = Self::current_time_ms();
+        // Clear votes from previous view (votes are view-specific)
+        self.vote_pool.clear();
+    }
+
+    // Reset timer when receiving a valid proposal (heartbeat)
+    pub fn on_inserting_block_proposal(&mut self) {
+        self.current_view += 1;
+        self.view_start_time = Self::current_time_ms();
+    }
+
+    // Reset timer when a block is committed (progress signal)
+    pub fn on_commit(&mut self) {
+        self.current_view += 1;
+        self.view_start_time = Self::current_time_ms();
+    }
+
+    // Get current leader for this view
+    pub fn current_leader(&self) -> ReplicaId {
+        self.config.leader_for_view(self.current_view)
+    }
+
+    // Check if this replica is the current leader
+    pub fn am_i_leader(&self) -> bool {
+        self.config.leader_for_view(self.current_view) == self.config.id
     }
 }
 
