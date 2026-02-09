@@ -4,7 +4,7 @@ use persisthotstuff_rst::types::*;
 
 #[test]
 fn qc_formation_from_votes() {
-    let config = Config { n: 4, f: 1, id: 0 };
+    let config = Config { n: 4, f: 1, id: 0, timeout_ms: 5000 };
 
     let mut replica = Replica {
         config: config.clone(),
@@ -15,6 +15,8 @@ fn qc_formation_from_votes() {
         next_hash: 0,
         committed_log: Vec::new(),
         committed_up_to: None,
+        timeout_ms: 5000,
+        view_start_time: 0,
     };
 
     let block_hash = 42u64;

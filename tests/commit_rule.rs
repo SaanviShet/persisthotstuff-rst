@@ -2,12 +2,10 @@ use persisthotstuff_rst::config::Config;
 use persisthotstuff_rst::replica::Replica;
 use persisthotstuff_rst::types::*;
 use std::collections::BTreeMap;
-use std::collections::HashMap;
-use persisthotstuff_rst::visualiser::*;
 
 #[test]
 fn three_chain_commits_block() {
-    let config = Config { n: 4, f: 1, id: 0 };
+    let config = Config { n: 4, f: 1, id: 0, timeout_ms: 5000 };
 
     let mut replica = Replica {
         config: config.clone(),
@@ -18,6 +16,8 @@ fn three_chain_commits_block() {
         next_hash: 0,
         committed_log: Vec::new(),
         committed_up_to: None,
+        timeout_ms: 5000,
+        view_start_time: 0,
     };
 
     // Genesis block B0
@@ -74,7 +74,7 @@ fn three_chain_commits_block() {
 
 #[test]
 fn insufficient_qc_blocks_dont_commit() {
-    let config = Config { n: 4, f: 1, id: 0 };
+    let config = Config { n: 4, f: 1, id: 0, timeout_ms: 5000 };
 
     let mut replica = Replica {
         config: config.clone(),
@@ -85,6 +85,8 @@ fn insufficient_qc_blocks_dont_commit() {
         next_hash: 0,
         committed_log: Vec::new(),
         committed_up_to: None,
+        timeout_ms: 5000,
+        view_start_time: 0,
     };
 
     // Genesis block B0 (no QC)
@@ -127,7 +129,7 @@ fn insufficient_qc_blocks_dont_commit() {
 
 #[test]
 fn commit_log_grows_correctly() {
-    let config = Config { n: 4, f: 1, id: 0 };
+    let config = Config { n: 4, f: 1, id: 0, timeout_ms: 5000 };
 
     let mut replica = Replica {
         config: config.clone(),
@@ -138,6 +140,8 @@ fn commit_log_grows_correctly() {
         next_hash: 0,
         committed_log: Vec::new(),
         committed_up_to: None,
+        timeout_ms: 5000,
+        view_start_time: 0,
     };
 
     // Genesis block B0
@@ -239,7 +243,7 @@ fn commit_log_grows_correctly() {
 
 #[test]
 fn cannot_commit_same_block_twice() {
-    let config = Config { n: 4, f: 1, id: 0 };
+    let config = Config { n: 4, f: 1, id: 0, timeout_ms: 5000 };
 
     let mut replica = Replica {
         config: config.clone(),
@@ -250,6 +254,8 @@ fn cannot_commit_same_block_twice() {
         next_hash: 0,
         committed_log: Vec::new(),
         committed_up_to: None,
+        timeout_ms: 5000,
+        view_start_time: 0,
     };
 
     // Genesis block B0

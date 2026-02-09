@@ -5,7 +5,7 @@ use persisthotstuff_rst::config::*;
 #[test]
 fn quorum_cert_forms_correctly() {
     let f = 1;
-    let config = Config { n: 4, f, id: 0 };
+    let config = Config { n: 4, f, id: 0, timeout_ms: 5000 };
 
     let mut sigs = vec![];
     for id in 0..config.quorum_size() {
