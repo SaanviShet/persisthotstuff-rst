@@ -239,13 +239,11 @@ impl Replica {
 
     // Reset timer when receiving a valid proposal (heartbeat)
     pub fn on_inserting_block_proposal(&mut self) {
-        self.current_view += 1;
         self.view_start_time = Self::current_time_ms();
     }
 
     // Reset timer when a block is committed (progress signal)
     pub fn on_commit(&mut self) {
-        self.current_view += 1;
         self.view_start_time = Self::current_time_ms();
     }
 
