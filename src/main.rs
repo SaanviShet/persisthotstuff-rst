@@ -1,18 +1,22 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use persisthotstuff_rst::config::Config;
 use persisthotstuff_rst::replica::Replica;
 use persisthotstuff_rst::types::*;
 
 fn main() {
-    let config = Config { n: 4, f: 1, id: 0 };
+    let config = Config { n: 4, f: 1, id: 0, timeout_ms: 5000 };
 
     let mut replica = Replica {
         config,
-        current_view: 4,
-        block_tree: HashMap::new(),
+        current_view: 0,
+        block_tree: BTreeMap::new(),
         high_qc: None,
-        vote_pool: HashMap::new(),
-        next_hash: 5,
+        vote_pool: BTreeMap::new(),
+        next_hash: 0,
+        committed_log: Vec::new(),
+        committed_up_to: None,
+        timeout_ms: 5000,
+        view_start_time: 0,
     };
 
     // Genesis
@@ -64,5 +68,24 @@ fn main() {
 
     replica.visualize();
 
-    println!("PersistHotStuff core initialized");
+    // Demonstrate pacemaker: show view and leader
+    println!("\n--- Pacemaker Demo ---");
+    println!("Initial View: {}, Leader: {}", replica.current_view, replica.current_leader());
+    
+    // Try to commit blocks using the 3-chain rule
+    replica.commit_all();
+
+    println!("\n--- Committed Blocks ---");
+    for (idx, block) in replica.committed_log.iter().enumerate() {
+        println!("Commit #{}: Block {} (view {})", idx, block.hash, block.view);
+    }
+
+    // Simulate timeout based view changes
+    println!("\n--- Simulating View Changes ---");
+    for _ in 0..3 {
+        println!("View changed to: {}, New Leader: {}", replica.current_view, replica.current_leader());
+        replica.on_view_timeout();
+    }
+
+    println!("\nPersistHotStuff core initialized with Pacemaker and View Change");
 }

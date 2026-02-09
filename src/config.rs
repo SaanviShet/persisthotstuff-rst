@@ -12,6 +12,7 @@ pub struct Config {
     pub n: usize,
     pub f: usize,
     pub id: ReplicaId,
+    pub timeout_ms: u64,
 }
 
 // The quorum size is the minimum number of replicas 

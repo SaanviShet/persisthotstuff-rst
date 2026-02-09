@@ -1,9 +1,10 @@
 use std::collections::HashMap;
+use std::collections::BTreeMap;
 use crate::types::*;
 
-pub fn print_block_tree(blocks: &HashMap<u64, Block>) {
+pub fn print_block_tree(blocks: &BTreeMap<u64, Block>) {
     fn print_subtree(
-        blocks: &HashMap<u64, Block>,
+        blocks: &BTreeMap<u64, Block>,
         current: u64,
         prefix: String,
         is_last: bool,
