@@ -1,6 +1,16 @@
 [package]
 name = "persisthotstuff-rst"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
+colored = "2.0"
+
+[[example]]
+name = "multi_replica_demo"
+path = "examples/multi_replica_demo.rs"
+
+[[example]]
+name = "normal_case"
+path = "examples/normal_case.rs"
+colored = "2.1"

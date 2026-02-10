@@ -3,3 +3,5 @@ pub mod crypto;
 pub mod types;
 pub mod replica;
 pub mod visualiser;
+pub mod network;
+pub mod simulation;

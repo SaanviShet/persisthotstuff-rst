@@ -21,14 +21,19 @@ pub struct Replica {
     pub view_start_time: u128,
 }
 
-use crate::visualiser::print_block_tree;
+use crate::visualiser::{print_block_tree_enhanced, print_commit_log, 
+                        print_replica_stats, print_view_timeline, ReplicaVisualizationData};
 use crate::crypto::{Signature, sign, verify, verify_qc};
-use crate::types::*;
 
 impl Replica {
+    /// Enhanced visualization with metadata and colors
     pub fn visualize(&self) {
-        println!("==============================");
-        println!("Replica {} | View {}", self.config.id, self.current_view);
+        let committed_hashes: Vec<Hash> = self.committed_log.iter().map(|b| b.hash).collect();
+        let high_qc_hash = self.high_qc.as_ref().map(|qc| qc.block_hash);
+        
+        println!("\n{}", "═".repeat(60));
+        println!("Replica R{} | View {}", self.config.id, self.current_view);
+        println!("{}", "═".repeat(60));
 
         if let Some(qc) = &self.high_qc {
             println!("High QC: Block {} (view {})", qc.block_hash, qc.view);
@@ -36,8 +41,41 @@ impl Replica {
             println!("High QC: None");
         }
 
-        print_block_tree(&self.block_tree);
-        println!("==============================");
+        print_block_tree_enhanced(&self.block_tree, Some(&committed_hashes), high_qc_hash);
+        
+        if !self.committed_log.is_empty() {
+            print_commit_log(&self.committed_log);
+        }
+        
+        println!("{}", "═".repeat(60));
+    }
+
+    /// Get visualization data for this replica
+    pub fn get_visualization_data(&self) -> ReplicaVisualizationData {
+        ReplicaVisualizationData {
+            replica_id: self.config.id,
+            current_view: self.current_view,
+            block_tree: self.block_tree.clone(),
+            high_qc: self.high_qc.clone(),
+            committed_log: self.committed_log.clone(),
+        }
+    }
+
+    /// Display detailed statistics
+    pub fn show_stats(&self) {
+        print_replica_stats(
+            self.config.id,
+            self.current_view,
+            self.block_tree.len(),
+            self.committed_log.len(),
+            self.vote_pool.len(),
+        );
+    }
+
+    /// Display view timeline for this replica
+    pub fn show_timeline(&self) {
+        let max_view = self.block_tree.values().map(|b| b.view).max().unwrap_or(0);
+        print_view_timeline(&self.block_tree, max_view);
     }
 
     // Handles an incoming vote, verifies it, and updates the vote pool.
