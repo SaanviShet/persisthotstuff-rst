@@ -25,9 +25,9 @@ fn main() {
     sim.compare_block_trees();
     
     // Visualize each replica's state
-    println!("\n{'='.to_string().repeat(60)}");
+    println!("\n{}", "=".repeat(60));
     println!("INDIVIDUAL REPLICA VISUALIZATIONS");
-    println!("{'='.to_string().repeat(60)}");
+    println!("{}", "=".repeat(60));
     
     for (idx, replica) in sim.replicas.iter().enumerate() {
         println!("\n--- Replica {} ---", idx);
@@ -35,18 +35,18 @@ fn main() {
     }
     
     // Side-by-side comparison
-    println!("\n{'='.to_string().repeat(60)}");
+    println!("\n{}", "=".repeat(60));
     println!("SIDE-BY-SIDE COMPARISON");
-    println!("{'='.to_string().repeat(60)}");
+    println!("{}", "=".repeat(60));
     
     compare_replicas_side_by_side(&sim.replicas[0], &sim.replicas[1], "Replica 0", "Replica 1");
     
     // View timeline
-    println!("\n{'='.to_string().repeat(60)}");
+    println!("\n{}", "=".repeat(60));
     println!("VIEW TIMELINE");
-    println!("{'='.to_string().repeat(60)}");
+    println!("{}", "=".repeat(60));
     
-    print_view_timeline(&sim.replicas[0]);
+    print_view_timeline(&sim.replicas[0].block_tree, sim.replicas[0].current_view);
     
     println!("\n✅ Multi-replica simulation completed successfully!\n");
 }

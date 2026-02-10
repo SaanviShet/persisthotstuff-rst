@@ -1,13 +1,22 @@
+//! Replica module implementing the core HotStuff consensus protocol logic.
+//!
+//! This module contains the Replica struct which maintains consensus state,
+//! handles proposals and votes, forms QCs, and detects commits using the 3-chain rule.
+
 use std::collections::BTreeMap;
 use crate::types::*;
 use crate::config::*;
 
-// Replica structure for the consensus protocol,
-// Each replica maintains its configuration(n, f, id), 
-// the current view number,
-// a block tree to store the blocks it has seen,
-// and the highest QC it has observed.
-// It also maintains a vote pool to track votes received for each block hash.
+/// Replica structure for the consensus protocol.
+///
+/// Each replica maintains:
+/// - Configuration (n, f, id)
+/// - Current view number
+/// - Block tree storing all seen blocks
+/// - Highest QC observed (high_qc)
+/// - Vote pool for collecting votes on blocks
+/// - Committed log of finalized blocks
+/// - Pacemaker state for view synchronization
 pub struct Replica {
     pub config: Config,
     pub current_view: u64,
@@ -78,7 +87,16 @@ impl Replica {
         print_view_timeline(&self.block_tree, max_view);
     }
 
-    // Handles an incoming vote, verifies it, and updates the vote pool.
+    /// Handle an incoming vote from another replica.
+    ///
+    /// Verifies the vote, adds it to the vote pool, and attempts to form a QC
+    /// if enough votes have been collected.
+    ///
+    /// # Arguments
+    /// * `vote` - The vote to process
+    ///
+    /// # Returns
+    /// Some(QuorumCert) if a QC was formed, None otherwise
     pub fn handle_vote(&mut self, vote: Vote) -> Option<QuorumCert> {
         if !verify(&vote.signature) {
             return None;
@@ -96,7 +114,16 @@ impl Replica {
         self.try_form_qc(vote.block_hash, vote.view)
     }
 
-    // Checks if enough votes have been collected for a block hash to form a QC.
+    /// Try to form a QC if enough votes have been collected.
+    ///
+    /// Checks if the vote pool has at least quorum_size signatures for the block.
+    ///
+    /// # Arguments
+    /// * `block_hash` - The block to check
+    /// * `view` - The view number
+    ///
+    /// # Returns
+    /// Some(QuorumCert) if quorum reached, None otherwise
     fn try_form_qc(&mut self, block_hash: Hash, view: u64) -> Option<QuorumCert> {
         if let Some(sigs) = self.vote_pool.get(&block_hash) {
             if sigs.len() >= self.config.quorum_size() {
@@ -108,21 +135,44 @@ impl Replica {
         None
     }
 
-    // Simulates receiving a vote from another replica, creates a Vote object, and processes it.
+    /// Simulate receiving a vote from another replica.
+    ///
+    /// Creates a Vote object and processes it through handle_vote.
+    ///
+    /// # Arguments
+    /// * `replica_id` - The ID of the voting replica
+    /// * `block_hash` - The block being voted on
+    /// * `view` - The view number
+    ///
+    /// # Returns
+    /// Some(QuorumCert) if this vote completes a QC, None otherwise
     pub fn receive_vote_from_replica(&mut self, replica_id: ReplicaId, block_hash: Hash, view: u64) -> Option<QuorumCert> {
         let signature = sign(replica_id);
         let vote = Vote { block_hash, view, signature };
         self.handle_vote(vote)
     }
 
-    // Determines if this replica is the leader for a given view
+    /// Check if this replica is the leader for a given view.
+    ///
+    /// # Arguments
+    /// * `view` - The view number to check
+    ///
+    /// # Returns
+    /// True if this replica is the leader for the view
     pub fn is_leader(&self, view: u64) -> bool {
         self.config.leader_for_view(view) == self.config.id
     }
 
-    // Proposes a new block if this replica is the leader for the given view. 
-    // The new block references the latest QC or 
-    // the latest block as its parent.
+    /// Propose a new block if this replica is the leader.
+    ///
+    /// Creates a new block extending the highest QC or latest block.
+    /// Only succeeds if this replica is the leader for the view.
+    ///
+    /// # Arguments
+    /// * `view` - The view number for the proposal
+    ///
+    /// # Returns
+    /// Some(Block) if proposal succeeds, None if not the leader
     pub fn propose(&mut self, view: u64) -> Option<Block> {
         if !self.is_leader(view) {
             return None;
@@ -138,7 +188,18 @@ impl Replica {
         Some(block)
     }
 
-    // Validates an incoming block proposal by checking the proposer, parent existence, and QC validity.
+    /// Validate and insert an incoming block proposal.
+    ///
+    /// Checks:
+    /// - Proposer is the expected leader for the view
+    /// - Parent block exists in the tree
+    /// - Embedded QC is valid (if present)
+    ///
+    /// # Arguments
+    /// * `block` - The proposed block to validate
+    ///
+    /// # Returns
+    /// True if the block is valid and inserted, false otherwise
     pub fn validate_and_insert_proposal(&mut self, block: Block) -> bool {
         // Check proposer is the expected leader for the view
         let expected = self.config.leader_for_view(block.view);
@@ -170,18 +231,32 @@ impl Replica {
         true
     }
 
-    // Helper function to find the hash of the latest block in the block tree based on view number.
+    /// Find the hash of the latest block in the tree (by view number).
+    ///
+    /// # Returns
+    /// Some(Hash) of the latest block, or None if tree is empty
     fn latest_block_hash(&self) -> Option<Hash> {
         self.block_tree.values().max_by_key(|b| b.view).map(|b| b.hash)
     }
 
-    // Find a block at a specific view number
+    /// Find a block at a specific view number.
+    ///
+    /// # Arguments
+    /// * `view` - The view number to search for
+    ///
+    /// # Returns
+    /// Some(Block) if a block exists at that view, None otherwise
     fn get_block_at_view(&self, view: u64) -> Option<Block> {
         self.block_tree.values().find(|b| b.view == view).cloned()
     }
 
-    // Detect if a 3-chain exists and return the committed block (B0)
-    // Pattern: B0 <- B1 <- B2, where B1 and B2 have valid QCs
+    /// Detect if a 3-chain exists and return the committed block.
+    ///
+    /// Searches for pattern: B0 ← B1[QC] ← B2[QC]
+    /// where B1 and B2 both have valid QCs.
+    ///
+    /// # Returns
+    /// Some(Block) representing B0 if a 3-chain is found, None otherwise
     pub fn find_committed_block(&self) -> Option<Block> {
         // Iterate through all blocks to find a 3-chain
         for b0 in self.block_tree.values() {
@@ -219,17 +294,27 @@ impl Replica {
         }
         None
     }
-// ***************
-    // Execute and commit a block to the log
+
+    /// Execute and commit a block to the committed log.
+    ///
+    /// Adds the block to committed_log and updates committed_up_to.
+    /// Also triggers on_commit() to reset the pacemaker timer.
+    ///
+    /// # Arguments
+    /// * `block` - The block to commit
     pub fn execute_and_commit(&mut self, block: Block) {
         self.committed_log.push(block.clone());
         self.committed_up_to = Some(block.hash);
         // view change on commit
         self.on_commit();
     }
-    // ******************
 
-    // Try to commit once by finding and executing the earliest uncommitted block in a 3-chain
+    /// Attempt to commit one block using the 3-chain rule.
+    ///
+    /// Finds the earliest uncommitted block in a 3-chain and commits it.
+    ///
+    /// # Returns
+    /// True if a block was committed, false otherwise
     pub fn try_commit_once(&mut self) -> bool {
             if let Some(block) = self.find_committed_block() {
             self.execute_and_commit(block);
@@ -238,14 +323,21 @@ impl Replica {
         false
     }
 
-    // Commit all possible blocks (repeatedly call try_commit_once)
+    /// Commit all committable blocks in sequence.
+    ///
+    /// Repeatedly calls try_commit_once() until no more blocks can be committed.
     pub fn commit_all(&mut self) {
         while self.try_commit_once() {}
     }
 
     // ===== Pacemaker & View Change Methods =====
 
-    // Get current time in milliseconds (mock: returns incrementing counter)
+    /// Get current time in milliseconds.
+    ///
+    /// Uses system time for timeout calculations.
+    ///
+    /// # Returns
+    /// Current time in milliseconds since UNIX epoch
     pub fn current_time_ms() -> u128 {
         // In a real system, use std::time::SystemTime
         // For testing, we use a deterministic approach
@@ -255,19 +347,27 @@ impl Replica {
             .as_millis()
     }
 
-    // Start a new view (reset timer)
+    /// Start a new view and reset the pacemaker timer.
+    ///
+    /// # Arguments
+    /// * `view` - The new view number to start
     pub fn start_view(&mut self, view: u64) {
         self.current_view = view;
         self.view_start_time = Self::current_time_ms();
     }
 
-    // Check if view has timed out
+    /// Check if the current view has timed out.
+    ///
+    /// # Returns
+    /// True if elapsed time exceeds timeout_ms, false otherwise
     pub fn is_view_timeout(&self) -> bool {
         let elapsed = Self::current_time_ms().saturating_sub(self.view_start_time);
         elapsed >= self.timeout_ms as u128
     }
 
-    // Handle a view timeout (move to next view)
+    /// Handle a view timeout by moving to the next view.
+    ///
+    /// Increments view, resets timer, and clears view-specific votes.
     pub fn on_view_timeout(&mut self) {
         self.current_view += 1;
         self.view_start_time = Self::current_time_ms();
@@ -275,22 +375,32 @@ impl Replica {
         self.vote_pool.clear();
     }
 
-    // Reset timer when receiving a valid proposal (heartbeat)
+    /// Reset timer when a valid proposal is received (heartbeat).
+    ///
+    /// Signals that the leader is active and making progress.
     pub fn on_inserting_block_proposal(&mut self) {
         self.view_start_time = Self::current_time_ms();
     }
 
-    // Reset timer when a block is committed (progress signal)
+    /// Reset timer when a block is committed (progress signal).
+    ///
+    /// Indicates that the protocol is making progress.
     pub fn on_commit(&mut self) {
         self.view_start_time = Self::current_time_ms();
     }
 
-    // Get current leader for this view
+    /// Get the leader for the current view.
+    ///
+    /// # Returns
+    /// The replica ID of the current leader
     pub fn current_leader(&self) -> ReplicaId {
         self.config.leader_for_view(self.current_view)
     }
 
-    // Check if this replica is the current leader
+    /// Check if this replica is the leader for the current view.
+    ///
+    /// # Returns
+    /// True if this replica is the current leader, false otherwise
     pub fn am_i_leader(&self) -> bool {
         self.config.leader_for_view(self.current_view) == self.config.id
     }

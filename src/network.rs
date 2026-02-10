@@ -1,3 +1,8 @@
+//! Network module for simulating message passing between replicas in the consensus protocol.
+//!
+//! This module provides the infrastructure for multi-replica communication including
+//! message types, network simulation, and broadcast primitives.
+
 use crate::types::*;
 use crate::config::ReplicaId;
 use std::collections::VecDeque;

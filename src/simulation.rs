@@ -1,3 +1,8 @@
+//! Simulation module for running multi-replica consensus scenarios.
+//!
+//! This module provides the simulation environment for executing complete consensus
+//! rounds with multiple replicas, including proposal, voting, QC formation, and commit phases.
+
 use crate::config::Config;
 use crate::replica::Replica;
 use crate::network::{Network, Message};
@@ -125,41 +130,45 @@ impl Simulation {
             println!("\n[Step 3] Replicas validating and voting...");
         }
         
-        let mut votes_collected = 0;
-        
+        // Process all proposal messages
+        let mut proposal_messages = Vec::new();
         while self.network.has_messages() {
             if let Some(msg) = self.network.receive() {
-                match msg {
-                    Message::Proposal { from, to, block } => {
-                        let replica = &mut self.replicas[to as usize];
-                        
-                        // Validate and insert proposal
-                        let valid = replica.validate_and_insert_proposal(block.clone());
-                        
-                        if valid {
-                            if self.verbose {
-                                println!("  ✓ Replica {} validated block {}", to, block.hash);
-                            }
-                            
-                            // Create and send vote
-                            let signature = sign(to);
-                            let vote = Vote {
-                                block_hash: block.hash,
-                                view: block.view,
-                                signature,
-                            };
-                            
-                            self.network.send_vote(to, from, vote);
-                            if self.verbose {
-                                println!("    → Replica {} sent vote to Leader {}", to, from);
-                            }
-                        } else {
-                            if self.verbose {
-                                println!("  ❌ Replica {} rejected block {}", to, block.hash);
-                            }
-                        }
+                if matches!(msg, Message::Proposal { .. }) {
+                    proposal_messages.push(msg);
+                }
+            }
+        }
+        
+        // Process proposals and generate votes
+        for msg in proposal_messages {
+            if let Message::Proposal { from, to, block } = msg {
+                let replica = &mut self.replicas[to as usize];
+                
+                // Validate and insert proposal
+                let valid = replica.validate_and_insert_proposal(block.clone());
+                
+                if valid {
+                    if self.verbose {
+                        println!("  ✓ Replica {} validated block {}", to, block.hash);
                     }
-                    _ => {}
+                    
+                    // Create and send vote
+                    let signature = sign(to);
+                    let vote = Vote {
+                        block_hash: block.hash,
+                        view: block.view,
+                        signature,
+                    };
+                    
+                    self.network.send_vote(to, from, vote);
+                    if self.verbose {
+                        println!("    → Replica {} sent vote to Leader {}", to, from);
+                    }
+                } else {
+                    if self.verbose {
+                        println!("  ❌ Replica {} rejected block {}", to, block.hash);
+                    }
                 }
             }
         }
@@ -169,6 +178,7 @@ impl Simulation {
             println!("\n[Step 4] Leader collecting votes...");
         }
         
+        let mut votes_collected = 0;
         let mut qc_formed = None;
         
         while self.network.has_messages() {

@@ -1,3 +1,8 @@
+//! Visualization module for displaying block trees, consensus state, and replica comparisons.
+//!
+//! This module provides enhanced visualization capabilities with colored output,
+//! including block tree display, multi-replica comparison, view timelines, and statistics.
+
 use std::collections::BTreeMap;
 use colored::*;
 use crate::types::*;
@@ -203,4 +208,59 @@ pub fn print_replica_stats(
     println!("  Committed Blocks: {}", format!("{}", committed_blocks).green().bold());
     println!("  Active Votes Collected: {}", vote_pool_size);
     println!("{}", "═══════════════════════════".bright_white().bold());
+}
+/// Compare two replicas side-by-side (convenience function)
+pub fn compare_replicas_side_by_side(
+    replica1: &crate::replica::Replica, 
+    replica2: &crate::replica::Replica,
+    label1: &str,
+    label2: &str
+) {
+    let data1 = replica1.get_visualization_data();
+    let data2 = replica2.get_visualization_data();
+    
+    println!("\n{}", format!("╔═══ {} vs {} ═══╗", label1, label2).bright_white().bold().underline());
+    println!("\n{:<35} │ {}", label1.bright_cyan().bold(), label2.bright_cyan().bold());
+    println!("{}", "─".repeat(70));
+    
+    println!("{:<35} │ {}", 
+        format!("View: {}", data1.current_view).yellow(), 
+        format!("View: {}", data2.current_view).yellow()
+    );
+    
+    println!("{:<35} │ {}", 
+        format!("Blocks: {}", data1.block_tree.len()), 
+        format!("Blocks: {}", data2.block_tree.len())
+    );
+    
+    println!("{:<35} │ {}", 
+        format!("Committed: {}", data1.committed_log.len()).green(), 
+        format!("Committed: {}", data2.committed_log.len()).green()
+    );
+    
+    let high_qc1 = if let Some(qc) = &data1.high_qc {
+        format!("Block {} (v:{})", qc.block_hash, qc.view)
+    } else {
+        "None".to_string()
+    };
+    
+    let high_qc2 = if let Some(qc) = &data2.high_qc {
+        format!("Block {} (v:{})", qc.block_hash, qc.view)
+    } else {
+        "None".to_string()
+    };
+    
+    println!("{:<35} │ {}", 
+        format!("High QC: {}", high_qc1).bright_magenta(), 
+        format!("High QC: {}", high_qc2).bright_magenta()
+    );
+    
+    // Compare committed logs
+    if data1.committed_log == data2.committed_log {
+        println!("\n{}", "✅ Committed logs are IDENTICAL (Safety preserved!)".green().bold());
+    } else {
+        println!("\n{}", "⚠️  WARNING: Committed logs DIFFER!".red().bold());
+    }
+    
+    println!("{}", "═".repeat(70));
 }
