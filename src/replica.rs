@@ -188,6 +188,35 @@ impl Replica {
         Some(block)
     }
 
+    /// Propose a new block with a specific hash (for multi-replica simulations).
+    ///
+    /// Similar to `propose()` but uses a globally unique hash provided by the network
+    /// to prevent hash collisions between replicas.
+    ///
+    /// # Arguments
+    /// * `view` - The view number for the proposal
+    /// * `unique_hash` - A globally unique hash for this block
+    ///
+    /// # Returns
+    /// Some(Block) if proposal succeeds, None if not the leader
+    pub fn propose_with_hash(&mut self, view: u64, unique_hash: Hash) -> Option<Block> {
+        if !self.is_leader(view) {
+            return None;
+        }
+
+        let parent = if let Some(qc) = &self.high_qc { Some(qc.block_hash) } else { self.latest_block_hash() };
+
+        let block = Block { 
+            hash: unique_hash, 
+            parent, 
+            view, 
+            proposer: self.config.id, 
+            qc: self.high_qc.clone() 
+        };
+        self.block_tree.insert(unique_hash, block.clone());
+        Some(block)
+    }
+
     /// Validate and insert an incoming block proposal.
     ///
     /// Checks:

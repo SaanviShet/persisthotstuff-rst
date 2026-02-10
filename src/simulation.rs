@@ -105,7 +105,9 @@ impl Simulation {
             println!("\n[Step 1] Leader {} proposing block...", leader_id);
         }
         
-        let proposal = self.replicas[leader_id].propose(current_view);
+        // Generate unique hash from network to avoid collisions
+        let unique_hash = self.network.generate_unique_hash();
+        let proposal = self.replicas[leader_id].propose_with_hash(current_view, unique_hash);
         if proposal.is_none() {
             if self.verbose {
                 println!("  ❌ Leader failed to propose");

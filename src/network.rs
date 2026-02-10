@@ -84,6 +84,9 @@ pub struct Network {
     /// Statistics
     pub total_messages_sent: usize,
     pub messages_by_type: [usize; 4], // Proposal, Vote, QC, NewView
+    
+    /// Global hash counter for unique block hashes across all replicas
+    next_global_hash: Hash,
 }
 
 impl Network {
@@ -95,6 +98,7 @@ impl Network {
             simulate_delays: false,
             total_messages_sent: 0,
             messages_by_type: [0, 0, 0, 0],
+            next_global_hash: 1, // Start from 1 (0 is reserved for genesis block)
         }
     }
     
@@ -178,6 +182,16 @@ impl Network {
     /// Clear all pending messages (useful for testing)
     pub fn clear(&mut self) {
         self.message_queue.clear();
+    }
+    
+    /// Generate a globally unique hash for a new block
+    /// 
+    /// This ensures that blocks from different replicas have unique hashes
+    /// and prevents hash collisions that would break the 3-chain commit rule.
+    pub fn generate_unique_hash(&mut self) -> Hash {
+        let hash = self.next_global_hash;
+        self.next_global_hash += 1;
+        hash
     }
     
     /// Print network statistics
