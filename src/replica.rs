@@ -281,7 +281,7 @@ impl Replica {
 
     /// Detect if a 3-chain exists and return the committed block.
     ///
-    /// Searches for pattern: B0 ← B1[QC] ← B2[QC]
+    /// Searches for pattern: B0 ← B1\[QC\] ← B2\[QC\]
     /// where B1 and B2 both have valid QCs.
     ///
     /// # Returns
