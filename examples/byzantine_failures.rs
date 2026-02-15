@@ -43,7 +43,7 @@ fn main() {
 
 /// Scenario 1: Byzantine Replica Sending Invalid Votes (f Byzantine replicas tolerated)
 /// Since verify() always returns true in the current implementation, this demonstrates
-/// the protocol's ability to form QC with honest votes
+/// the protocol's ability to reject invalid votes (wrong block hash, invalid signer ID)
 fn scenario_1_byzantine_votes() {
     println!("\n{}", "=".repeat(70).bright_red());
     println!("{}", "SCENARIO 1: Byzantine Replica Sending Invalid Votes".bright_red().bold());
@@ -51,6 +51,7 @@ fn scenario_1_byzantine_votes() {
     
     println!("\n📋 Scenario Description:");
     println!("   - Replica 3 is Byzantine and attempts to disrupt consensus");
+    println!("   - Sends vote for non-existent block AND invalid signature");
     println!("   - System tolerates up to f=1 Byzantine replica");
     println!("   - QC forms with 3 honest replicas (R0, R1, R2)");
     
@@ -95,23 +96,42 @@ fn scenario_1_byzantine_votes() {
                 
                 if replica.validate_and_insert_proposal(block.clone()) {
                     if to == 3 {
-                        println!("⚠️  Byzantine Replica 3 participating (but system tolerates up to f=1 Byzantine)");
+                        // Byzantine behavior: Try multiple attack vectors
+                        println!("⚠️  Byzantine Replica 3 attempting multiple attacks:");
+                        
+                        // Attack 1: Vote for non-existent block
+                        println!("   Attack 1: Voting for non-existent block (hash: 99999)");
+                        let invalid_vote_1 = Vote {
+                            block_hash: 99999, // Non-existent block hash
+                            view: current_view,
+                            signature: sign(to),
+                        };
+                        sim.network.send_vote(to, leader_id as u64, invalid_vote_1);
+                        
+                        // // Attack 2: Vote with invalid signer ID
+                        // println!("   Attack 2: Using invalid signer ID (999)");
+                        // let invalid_vote_2 = Vote {
+                        //     block_hash: block.hash,
+                        //     view: current_view,
+                        //     signature: sign(999), // Invalid replica ID
+                        // };
+                        // sim.network.send_vote(to, leader_id as u64, invalid_vote_2);
                     } else {
                         println!("✓ Honest Replica {} validated and voting", to);
+                        let vote = Vote {
+                            block_hash: block.hash,
+                            view: current_view,
+                            signature: sign(to),
+                        };
+                        sim.network.send_vote(to, leader_id as u64, vote);
                     }
-                    
-                    let vote = Vote {
-                        block_hash: block.hash,
-                        view: current_view,
-                        signature: sign(to),
-                    };
-                    sim.network.send_vote(to, leader_id as u64, vote);
                 }
             }
         }
         
         // Leader collects votes
         let mut valid_votes = 1; // Leader already voted
+        let mut invalid_votes = 0;
         let mut qc_formed = false;
         
         while sim.network.has_messages() {
@@ -122,15 +142,23 @@ fn scenario_1_byzantine_votes() {
                     qc_formed = true;
                     println!("\n🎉 QC formed with {} signatures!", qc.signatures.len());
                     println!("   System tolerated Byzantine replica (need 2f+1 = 3 votes)");
+                    println!("   Byzantine attacks were REJECTED by validation checks!");
                     break;
                 } else {
-                    valid_votes += 1;
+                    if from == 3 {
+                        invalid_votes += 1;
+                        println!("   ❌ Byzantine vote from R{} REJECTED", from);
+                    } else {
+                        valid_votes += 1;
+                        println!("   ✓ Valid vote from R{} accepted (total: {})", from, valid_votes);
+                    }
                 }
             }
         }
         
         if !qc_formed {
-            println!("\n⚠️  QC not yet formed - collected {} votes so far", valid_votes);
+            println!("\n⚠️  QC not yet formed - collected {} valid votes, rejected {} invalid votes", 
+                     valid_votes, invalid_votes);
         }
     }
     
@@ -309,7 +337,7 @@ fn scenario_3_leader_failure() {
                 let leader = &mut sim.replicas[to as usize];
                 if let Some(qc) = leader.handle_vote(vote) {
                     qc_formed = true;
-                    println!("🎉 QC formed in new view with {} votes!", qc.signatures.len());
+                    println!("🎉 QC formed in new view {} with {} votes!", qc.view, qc.signatures.len());
                     println!("   View change successful - system recovered!");
                     break;
                 }

@@ -98,13 +98,26 @@ impl Replica {
     /// # Returns
     /// Some(QuorumCert) if a QC was formed, None otherwise
     pub fn handle_vote(&mut self, vote: Vote) -> Option<QuorumCert> {
+        // Validate signature cryptographically
         if !verify(&vote.signature) {
             return None;
         }
 
         let sig = vote.signature;
+        
+        // Check if signer ID is within valid range (0 to n-1)
+        if sig.signer >= self.config.n as u64 {
+            return None;
+        }
+        
+        // Check if the block_hash being voted on actually exists in our block tree
+        if !self.block_tree.contains_key(&vote.block_hash) {
+            return None;
+        }
+
         let entry = self.vote_pool.entry(vote.block_hash).or_insert_with(Vec::new);
 
+        // Check for duplicate vote from same signer
         if entry.iter().any(|s| s.signer == sig.signer) {
             return None;
         }
