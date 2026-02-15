@@ -79,7 +79,7 @@ impl Simulation {
     }
     
     /// Get the current leader based on current view
-    fn current_leader(&self) -> usize {
+    pub fn current_leader(&self) -> usize {
         let view = self.replicas[0].current_view;
         (view as usize) % self.replicas.len()
     }
