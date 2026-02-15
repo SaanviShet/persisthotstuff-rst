@@ -1,6 +1,7 @@
 use persisthotstuff_rst::config::Config;
 use persisthotstuff_rst::replica::Replica;
 use persisthotstuff_rst::types::*;
+use persisthotstuff_rst::crypto::KeyStore;
 use std::collections::BTreeMap;
 
 #[test]
@@ -18,6 +19,7 @@ fn three_chain_commits_block() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        keystore: KeyStore::new(4),
     };
 
     // Genesis block B0
@@ -87,6 +89,7 @@ fn insufficient_qc_blocks_dont_commit() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        keystore: KeyStore::new(4),
     };
 
     // Genesis block B0 (no QC)
@@ -142,6 +145,7 @@ fn commit_log_grows_correctly() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        keystore: KeyStore::new(4),
     };
 
     // Genesis block B0
@@ -256,6 +260,7 @@ fn cannot_commit_same_block_twice() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        keystore: KeyStore::new(4),
     };
 
     // Genesis block B0

@@ -5,6 +5,9 @@ edition = "2021"
 
 [dependencies]
 colored = "2.0"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+sha2 = "0.10"
 
 [[example]]
 name = "multi_replica_demo"
@@ -13,4 +16,7 @@ path = "examples/multi_replica_demo.rs"
 [[example]]
 name = "normal_case"
 path = "examples/normal_case.rs"
-colored = "2.1"
+
+[[example]]
+name = "byzantine_failures"
+path = "examples/byzantine_failures.rs"

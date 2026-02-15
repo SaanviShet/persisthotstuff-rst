@@ -17,6 +17,7 @@ use crate::config::*;
 /// - Vote pool for collecting votes on blocks
 /// - Committed log of finalized blocks
 /// - Pacemaker state for view synchronization
+/// - KeyStore for Ed25519 cryptographic operations
 pub struct Replica {
     pub config: Config,
     pub current_view: u64,
@@ -28,11 +29,12 @@ pub struct Replica {
     pub committed_up_to: Option<Hash>,
     pub timeout_ms: u64,
     pub view_start_time: u128,
+    pub keystore: KeyStore,
 }
 
 use crate::visualiser::{print_block_tree_enhanced, print_commit_log, 
                         print_replica_stats, print_view_timeline, ReplicaVisualizationData};
-use crate::crypto::{Signature, sign, verify, verify_qc};
+use crate::crypto::{Signature, KeyStore, sign, verify, verify_qc};
 
 impl Replica {
     /// Enhanced visualization with metadata and colors
@@ -89,8 +91,9 @@ impl Replica {
 
     /// Handle an incoming vote from another replica.
     ///
-    /// Verifies the vote, adds it to the vote pool, and attempts to form a QC
-    /// if enough votes have been collected.
+    /// Cryptographically verifies the Ed25519 signature on the vote using the
+    /// KeyStore, validates the block hash exists, and adds it to the vote pool.
+    /// Attempts to form a QC if enough votes have been collected.
     ///
     /// # Arguments
     /// * `vote` - The vote to process
@@ -98,8 +101,8 @@ impl Replica {
     /// # Returns
     /// Some(QuorumCert) if a QC was formed, None otherwise
     pub fn handle_vote(&mut self, vote: Vote) -> Option<QuorumCert> {
-        // Validate signature cryptographically
-        if !verify(&vote.signature) {
+        // Cryptographically verify the Ed25519 signature against the signer's public key
+        if !self.keystore.verify(&vote.signature, vote.block_hash, vote.view) {
             return None;
         }
 
@@ -150,7 +153,7 @@ impl Replica {
 
     /// Simulate receiving a vote from another replica.
     ///
-    /// Creates a Vote object and processes it through handle_vote.
+    /// Creates a cryptographically signed Vote and processes it through handle_vote.
     ///
     /// # Arguments
     /// * `replica_id` - The ID of the voting replica
@@ -160,7 +163,7 @@ impl Replica {
     /// # Returns
     /// Some(QuorumCert) if this vote completes a QC, None otherwise
     pub fn receive_vote_from_replica(&mut self, replica_id: ReplicaId, block_hash: Hash, view: u64) -> Option<QuorumCert> {
-        let signature = sign(replica_id);
+        let signature = self.keystore.sign(replica_id, block_hash, view);
         let vote = Vote { block_hash, view, signature };
         self.handle_vote(vote)
     }
@@ -235,7 +238,7 @@ impl Replica {
     /// Checks:
     /// - Proposer is the expected leader for the view
     /// - Parent block exists in the tree
-    /// - Embedded QC is valid (if present)
+    /// - Embedded QC is valid (if present) — verified cryptographically via KeyStore
     ///
     /// # Arguments
     /// * `block` - The proposed block to validate
@@ -257,9 +260,9 @@ impl Replica {
             }
         }
 
-        // If the block carries a QC, validate it
+        // If the block carries a QC, validate it cryptographically
         if let Some(ref qc) = block.qc {
-            if !verify_qc(qc, self.config.quorum_size()) {
+            if !self.keystore.verify_qc(qc, self.config.quorum_size()) {
                 return false;
             }
             // ensure QC's block exists in our tree (sanity check)

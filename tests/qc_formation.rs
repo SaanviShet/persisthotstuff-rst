@@ -1,6 +1,7 @@
 use persisthotstuff_rst::config::Config;
 use persisthotstuff_rst::replica::Replica;
 use persisthotstuff_rst::types::*;
+use persisthotstuff_rst::crypto::KeyStore;
 
 #[test]
 fn qc_formation_from_votes() {
@@ -17,10 +18,20 @@ fn qc_formation_from_votes() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        keystore: KeyStore::new(4),
     };
 
     let block_hash = 42u64;
     let view = 1u64;
+
+    // Insert the block that votes will reference (handle_vote validates existence)
+    replica.block_tree.insert(block_hash, Block {
+        hash: block_hash,
+        parent: Some(0),
+        view,
+        proposer: 0,
+        qc: None,
+    });
 
     for id in 0..config.quorum_size() {
         let qc_opt = replica.receive_vote_from_replica(id as u64, block_hash, view);

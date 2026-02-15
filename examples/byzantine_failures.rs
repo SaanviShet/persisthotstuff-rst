@@ -9,7 +9,6 @@
 use persisthotstuff_rst::simulation::Simulation;
 use persisthotstuff_rst::network::Message;
 use persisthotstuff_rst::types::*;
-use persisthotstuff_rst::crypto::sign;
 use colored::*;
 
 fn main() {
@@ -75,7 +74,7 @@ fn scenario_1_byzantine_votes() {
         let leader_vote = Vote {
             block_hash: block.hash,
             view: current_view,
-            signature: sign(leader_id as u64),
+            signature: sim.keystore.sign(leader_id as u64, block.hash, current_view),
         };
         sim.replicas[leader_id].handle_vote(leader_vote);
         
@@ -104,7 +103,7 @@ fn scenario_1_byzantine_votes() {
                         let invalid_vote_1 = Vote {
                             block_hash: 99999, // Non-existent block hash
                             view: current_view,
-                            signature: sign(to),
+                            signature: sim.keystore.sign(to, 99999, current_view),
                         };
                         sim.network.send_vote(to, leader_id as u64, invalid_vote_1);
                         
@@ -121,7 +120,7 @@ fn scenario_1_byzantine_votes() {
                         let vote = Vote {
                             block_hash: block.hash,
                             view: current_view,
-                            signature: sign(to),
+                            signature: sim.keystore.sign(to, block.hash, current_view),
                         };
                         sim.network.send_vote(to, leader_id as u64, vote);
                     }
@@ -193,7 +192,7 @@ fn scenario_2_message_delays() {
         let leader_vote = Vote {
             block_hash: block.hash,
             view: current_view,
-            signature: sign(leader_id as u64),
+            signature: sim.keystore.sign(leader_id as u64, block.hash, current_view),
         };
         sim.replicas[leader_id].handle_vote(leader_vote);
         
@@ -221,7 +220,7 @@ fn scenario_2_message_delays() {
                     let vote = Vote {
                         block_hash: block.hash,
                         view: current_view,
-                        signature: sign(to),
+                        signature: sim.keystore.sign(to, block.hash, current_view),
                     };
                     sim.network.send_vote(to, leader_id as u64, vote);
                 }
@@ -299,7 +298,7 @@ fn scenario_3_leader_failure() {
         let leader_vote = Vote {
             block_hash: block.hash,
             view: current_view,
-            signature: sign(new_leader as u64),
+            signature: sim.keystore.sign(new_leader as u64, block.hash, current_view),
         };
         sim.replicas[new_leader].handle_vote(leader_vote);
         
@@ -320,7 +319,7 @@ fn scenario_3_leader_failure() {
                     let vote = Vote {
                         block_hash: block.hash,
                         view: current_view,
-                        signature: sign(to),
+                        signature: sim.keystore.sign(to, block.hash, current_view),
                     };
                     sim.network.send_vote(to, new_leader as u64, vote);
                 }
@@ -383,7 +382,7 @@ fn scenario_4_network_partition() {
         let leader_vote = Vote {
             block_hash: block.hash,
             view: current_view,
-            signature: sign(leader_id as u64),
+            signature: sim.keystore.sign(leader_id as u64, block.hash, current_view),
         };
         sim.replicas[leader_id].handle_vote(leader_vote);
         
@@ -405,7 +404,7 @@ fn scenario_4_network_partition() {
                 let vote = Vote {
                     block_hash: block.hash,
                     view: current_view,
-                    signature: sign(to as u64),
+                    signature: sim.keystore.sign(to as u64, block.hash, current_view),
                 };
                 sim.network.send_vote(to as u64, leader_id as u64, vote);
             } else {
@@ -494,9 +493,9 @@ fn scenario_5_byzantine_leader() {
     
     // Replicas vote for what they received
     println!("\n--- Replicas Voting ---");
-    let vote_1 = Vote { block_hash: hash_a, view: current_view, signature: sign(1) };
-    let vote_2 = Vote { block_hash: hash_a, view: current_view, signature: sign(2) };
-    let vote_3 = Vote { block_hash: hash_b, view: current_view, signature: sign(3) };
+    let vote_1 = Vote { block_hash: hash_a, view: current_view, signature: sim.keystore.sign(1, hash_a, current_view) };
+    let vote_2 = Vote { block_hash: hash_a, view: current_view, signature: sim.keystore.sign(2, hash_a, current_view) };
+    let vote_3 = Vote { block_hash: hash_b, view: current_view, signature: sim.keystore.sign(3, hash_b, current_view) };
     
     println!("✓ R1 voted for Block A");
     println!("✓ R2 voted for Block A");

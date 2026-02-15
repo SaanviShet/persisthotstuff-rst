@@ -1,6 +1,6 @@
 use persisthotstuff_rst::types::*;
 use persisthotstuff_rst::config::ReplicaId;
-use persisthotstuff_rst::crypto::sign;
+use persisthotstuff_rst::crypto::{sign, KeyStore};
 use persisthotstuff_rst::network::{Network, Message};
 
 

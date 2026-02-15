@@ -1,6 +1,7 @@
 use persisthotstuff_rst::config::Config;
 use persisthotstuff_rst::replica::Replica;
 use persisthotstuff_rst::types::*;
+use persisthotstuff_rst::crypto::KeyStore;
 use std::collections::BTreeMap;
 
 #[test]
@@ -18,6 +19,7 @@ fn timeout_increments_view() {
         committed_up_to: None,
         timeout_ms: 1000,
         view_start_time: Replica::current_time_ms(),
+        keystore: KeyStore::new(4),
     };
 
     let initial_view = replica.current_view;
@@ -41,6 +43,7 @@ fn view_timeout_clears_vote_pool() {
         committed_up_to: None,
         timeout_ms: 1000,
         view_start_time: Replica::current_time_ms(),
+        keystore: KeyStore::new(4),
     };
 
     // Add some votes
@@ -69,6 +72,7 @@ fn correct_leader_selected_per_view() {
         committed_up_to: None,
         timeout_ms: 1000,
         view_start_time: Replica::current_time_ms(),
+        keystore: KeyStore::new(4),
     };
 
     // Test round-robin leader selection
@@ -97,6 +101,7 @@ fn am_i_leader_works_correctly() {
         committed_up_to: None,
         timeout_ms: 1000,
         view_start_time: Replica::current_time_ms(),
+        keystore: KeyStore::new(4),
     };
 
     // Replica id=1, view=0: leader should be 0 % 4 = 0, so not leader
@@ -127,6 +132,7 @@ fn reset_timer_on_proposal() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,  // Old time
+        keystore: KeyStore::new(4),
     };
 
     let old_time = replica.view_start_time;
@@ -150,6 +156,7 @@ fn reset_timer_on_commit() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,  // Old time
+        keystore: KeyStore::new(4),
     };
 
     let old_time = replica.view_start_time;
@@ -173,6 +180,7 @@ fn sequential_view_changes() {
         committed_up_to: None,
         timeout_ms: 1000,
         view_start_time: Replica::current_time_ms(),
+        keystore: KeyStore::new(4),
     };
 
     // Simulate several view changes and check leader transitions
