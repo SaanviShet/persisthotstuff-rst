@@ -154,16 +154,23 @@ impl Replica {
     /// Simulate receiving a vote from another replica.
     ///
     /// Creates a cryptographically signed Vote and processes it through handle_vote.
+    /// Note: This method can only be used by the replica whose ID matches replica_id,
+    /// as each KeyStore only contains its own private key.
     ///
     /// # Arguments
-    /// * `replica_id` - The ID of the voting replica
+    /// * `replica_id` - The ID of the voting replica (must match this replica's ID)
     /// * `block_hash` - The block being voted on
     /// * `view` - The view number
     ///
     /// # Returns
     /// Some(QuorumCert) if this vote completes a QC, None otherwise
     pub fn receive_vote_from_replica(&mut self, replica_id: ReplicaId, block_hash: Hash, view: u64) -> Option<QuorumCert> {
-        let signature = self.keystore.sign(replica_id, block_hash, view);
+        // Verify this replica can only sign votes as itself
+        if replica_id != self.config.id {
+            return None;
+        }
+        
+        let signature = self.keystore.sign(block_hash, view);
         let vote = Vote { block_hash, view, signature };
         self.handle_vote(vote)
     }

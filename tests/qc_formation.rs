@@ -7,6 +7,9 @@ use persisthotstuff_rst::crypto::KeyStore;
 fn qc_formation_from_votes() {
     let config = Config { n: 4, f: 1, id: 0, timeout_ms: 5000 };
 
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
+
     let mut replica = Replica {
         config: config.clone(),
         current_view: 1,
@@ -18,7 +21,7 @@ fn qc_formation_from_votes() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
-        keystore: KeyStore::new(4),
+        keystore: keystores[0].clone(),
     };
 
     let block_hash = 42u64;
@@ -33,8 +36,11 @@ fn qc_formation_from_votes() {
         qc: None,
     });
 
+    // Collect votes from different replicas using their own keystores
     for id in 0..config.quorum_size() {
-        let qc_opt = replica.receive_vote_from_replica(id as u64, block_hash, view);
+        let signature = keystores[id].sign(block_hash, view);
+        let vote = Vote { block_hash, view, signature };
+        let qc_opt = replica.handle_vote(vote);
         if let Some(qc) = qc_opt {
             // QC should have at least 2f+1 signatures, and the high QC should be updated to the new QC.
             assert!(qc.signatures.len() >= 2*config.f+1, "QC doesn't have enough signatures");

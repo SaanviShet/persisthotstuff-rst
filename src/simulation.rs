@@ -18,9 +18,6 @@ pub struct Simulation {
     /// Network for message passing
     pub network: Network,
     
-    /// Shared key store for signing/verifying across all replicas
-    pub keystore: KeyStore,
-    
     /// Current simulation step
     pub step: usize,
     
@@ -36,8 +33,11 @@ impl Simulation {
     pub fn new(n: usize, f: usize, max_steps: usize, verbose: bool) -> Self {
         let mut replicas = Vec::new();
         
-        // Generate a shared KeyStore with Ed25519 key pairs for all replicas
-        let keystore = KeyStore::new(n);
+        // Generate Ed25519 key pairs for all replicas
+        let all_keys = KeyStore::generate_keys(n);
+        
+        // Distribute keys: each replica gets its own private key + all public keys
+        let keystores = KeyStore::distribute_keys(&all_keys);
         
         // Initialize all replicas with the same genesis block
         for id in 0..n {
@@ -59,7 +59,7 @@ impl Simulation {
                 committed_up_to: None,
                 timeout_ms: 5000,
                 view_start_time: Replica::current_time_ms(),
-                keystore: keystore.clone(),
+                keystore: keystores[id].clone(),
             };
             
             // Insert genesis block
@@ -79,7 +79,6 @@ impl Simulation {
         Simulation {
             replicas,
             network,
-            keystore,
             step: 0,
             max_steps,
             verbose,
@@ -163,8 +162,8 @@ impl Simulation {
                         println!("  ✓ Replica {} validated block {}", to, block.hash);
                     }
                     
-                    // Create and send vote with Ed25519 signature
-                    let signature = self.keystore.sign(to as u64, block.hash, block.view);
+                    // Create and send vote with Ed25519 signature using replica's own keystore
+                    let signature = replica.keystore.sign(block.hash, block.view);
                     let vote = Vote {
                         block_hash: block.hash,
                         view: block.view,

@@ -8,6 +8,9 @@ use std::collections::BTreeMap;
 fn three_chain_commits_block() {
     let config = Config { n: 4, f: 1, id: 0, timeout_ms: 5000 };
 
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
+
     let mut replica = Replica {
         config: config.clone(),
         current_view: 3,
@@ -19,7 +22,7 @@ fn three_chain_commits_block() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
-        keystore: KeyStore::new(4),
+        keystore: keystores[0].clone(),
     };
 
     // Genesis block B0
@@ -78,6 +81,9 @@ fn three_chain_commits_block() {
 fn insufficient_qc_blocks_dont_commit() {
     let config = Config { n: 4, f: 1, id: 0, timeout_ms: 5000 };
 
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
+
     let mut replica = Replica {
         config: config.clone(),
         current_view: 2,
@@ -89,7 +95,7 @@ fn insufficient_qc_blocks_dont_commit() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
-        keystore: KeyStore::new(4),
+        keystore: keystores[0].clone(),
     };
 
     // Genesis block B0 (no QC)
@@ -134,6 +140,9 @@ fn insufficient_qc_blocks_dont_commit() {
 fn commit_log_grows_correctly() {
     let config = Config { n: 4, f: 1, id: 0, timeout_ms: 5000 };
 
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
+
     let mut replica = Replica {
         config: config.clone(),
         current_view: 5,
@@ -145,7 +154,7 @@ fn commit_log_grows_correctly() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
-        keystore: KeyStore::new(4),
+        keystore: keystores[0].clone(),
     };
 
     // Genesis block B0
@@ -249,6 +258,9 @@ fn commit_log_grows_correctly() {
 fn cannot_commit_same_block_twice() {
     let config = Config { n: 4, f: 1, id: 0, timeout_ms: 5000 };
 
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
+
     let mut replica = Replica {
         config: config.clone(),
         current_view: 3,
@@ -260,7 +272,7 @@ fn cannot_commit_same_block_twice() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
-        keystore: KeyStore::new(4),
+        keystore: keystores[0].clone(),
     };
 
     // Genesis block B0

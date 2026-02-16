@@ -10,7 +10,9 @@ fn main() {
     println!("{}", "║     PersistHotStuff - Enhanced Visualization Demo        ║");
     println!("{}", "╚═══════════════════════════════════════════════════════════╝");
 
-    let keystore = KeyStore::new(4);
+    // Generate keys for all replicas
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
 
     // Create first replica
     let config = Config { n: 4, f: 1, id: 0, timeout_ms: 5000 };
@@ -26,7 +28,7 @@ fn main() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
-        keystore: keystore.clone(),
+        keystore: keystores[0].clone(),
     };
 
     // Genesis
@@ -124,7 +126,7 @@ fn main() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
-        keystore: keystore.clone(),
+        keystore: keystores[1].clone(),
     };
 
     // Replica 2 has slightly different state (simulating network delay/partition)
@@ -169,7 +171,7 @@ fn main() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
-        keystore: keystore.clone(),
+        keystore: keystores[2].clone(),
     };
 
     // Replica 3 has same base but different fork

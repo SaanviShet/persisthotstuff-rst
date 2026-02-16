@@ -22,42 +22,102 @@ pub struct Signature {
     pub bytes: [u8; 64],
 }
 
-/// Key store managing Ed25519 key pairs for all replicas.
+/// Key store managing Ed25519 keys for a single replica.
 ///
-/// Maps each replica ID to its signing (private) key and verifying (public) key.
-/// In a real system, each replica would only hold its own private key and
-/// the public keys of all other replicas. Here, for simulation convenience,
-/// the KeyStore holds all key pairs centrally.
+/// Each replica holds:
+/// - Its own private signing key (for creating signatures)
+/// - Public keys of all replicas in the network (for verification)
+///
+/// This models a realistic distributed system where each node only
+/// has access to its own private key, but knows the public keys of
+/// all other participants.
 #[derive(Clone)]
 pub struct KeyStore {
-    signing_keys: HashMap<ReplicaId, SigningKey>,
-    verifying_keys: HashMap<ReplicaId, VerifyingKey>,
+    /// This replica's ID
+    my_id: ReplicaId,
+    /// This replica's private signing key (only this replica knows this)
+    my_signing_key: SigningKey,
+    /// Public keys of all replicas (including this one)
+    public_keys: HashMap<ReplicaId, VerifyingKey>,
 }
 
 impl KeyStore {
-    /// Create a new KeyStore with Ed25519 key pairs for `n` replicas (IDs 0..n-1).
+    /// Create a KeyStore for a specific replica.
+    ///
+    /// # Arguments
+    /// * `my_id` - This replica's ID
+    /// * `my_signing_key` - This replica's private key
+    /// * `public_keys` - Map of all replicas' public keys (including this replica)
+    ///
+    /// # Returns
+    /// A new KeyStore configured for this specific replica
+    pub fn new_for_replica(
+        my_id: ReplicaId, 
+        my_signing_key: SigningKey, 
+        public_keys: HashMap<ReplicaId, VerifyingKey>
+    ) -> Self {
+        KeyStore {
+            my_id,
+            my_signing_key,
+            public_keys,
+        }
+    }
+
+    /// Generate key pairs for all replicas (simulation helper).
+    ///
+    /// This is used during simulation setup to generate all keys.
+    /// In production, each replica would generate its own key pair
+    /// and distribute its public key through a PKI or configuration.
     ///
     /// # Arguments
     /// * `n` - The number of replicas to generate keys for
     ///
     /// # Returns
-    /// A new KeyStore with freshly generated key pairs
-    pub fn new(n: usize) -> Self {
-        let mut signing_keys = HashMap::new();
-        let mut verifying_keys = HashMap::new();
+    /// A map of (ReplicaId -> (SigningKey, VerifyingKey)) for all replicas
+    pub fn generate_keys(n: usize) -> HashMap<ReplicaId, (SigningKey, VerifyingKey)> {
+        let mut keys = HashMap::new();
         let mut rng = rand::thread_rng();
 
         for id in 0..n {
             let sk = SigningKey::generate(&mut rng);
             let vk = sk.verifying_key();
-            signing_keys.insert(id as ReplicaId, sk);
-            verifying_keys.insert(id as ReplicaId, vk);
+            keys.insert(id as ReplicaId, (sk, vk));
         }
 
-        KeyStore {
-            signing_keys,
-            verifying_keys,
+        keys
+    }
+
+    /// Create KeyStores for all replicas from a generated key map.
+    ///
+    /// Each replica gets its own KeyStore with:
+    /// - Only its own private key
+    /// - All replicas' public keys
+    ///
+    /// # Arguments
+    /// * `all_keys` - Map of all generated key pairs
+    ///
+    /// # Returns
+    /// A vector of KeyStores, one per replica
+    pub fn distribute_keys(all_keys: &HashMap<ReplicaId, (SigningKey, VerifyingKey)>) -> Vec<KeyStore> {
+        let mut keystores = Vec::new();
+        
+        // Build the public key map (same for all replicas)
+        let public_keys: HashMap<ReplicaId, VerifyingKey> = all_keys
+            .iter()
+            .map(|(&id, (_sk, vk))| (id, vk.clone()))
+            .collect();
+
+        // Create a KeyStore for each replica
+        for (&replica_id, (signing_key, _)) in all_keys.iter() {
+            let keystore = KeyStore::new_for_replica(
+                replica_id,
+                signing_key.clone(),
+                public_keys.clone(),
+            );
+            keystores.push(keystore);
         }
+
+        keystores
     }
 
     /// Build the message bytes that are signed/verified for a vote.
@@ -77,31 +137,27 @@ impl KeyStore {
         hasher.finalize().to_vec()
     }
 
-    /// Sign a vote (block_hash, view) with the private key of the given replica.
+    /// Sign a vote (block_hash, view) with this replica's private key.
     ///
     /// # Arguments
-    /// * `signer_id` - The replica ID that is signing
     /// * `block_hash` - The block hash being voted on
     /// * `view` - The view number
     ///
     /// # Returns
-    /// A `Signature` containing the signer ID and Ed25519 signature bytes
-    ///
-    /// # Panics
-    /// Panics if the signer_id is not in the KeyStore (no key pair exists)
-    pub fn sign(&self, signer_id: ReplicaId, block_hash: u64, view: u64) -> Signature {
+    /// A `Signature` containing this replica's ID and Ed25519 signature bytes
+    pub fn sign(&self, block_hash: u64, view: u64) -> Signature {
         let msg = Self::vote_message(block_hash, view);
-        let sk = self.signing_keys
-            .get(&signer_id)
-            .unwrap_or_else(|| panic!("No signing key for replica {}", signer_id));
-        let sig = sk.sign(&msg);
+        let sig = self.my_signing_key.sign(&msg);
         Signature {
-            signer: signer_id,
+            signer: self.my_id,
             bytes: sig.to_bytes(),
         }
     }
 
     /// Verify a signature against the public key of the claimed signer.
+    ///
+    /// Looks up the signer's public key and verifies the signature.
+    /// This replica doesn't need to know the signer's private key.
     ///
     /// # Arguments
     /// * `sig` - The signature to verify
@@ -113,7 +169,7 @@ impl KeyStore {
     /// signer's public key; `false` if the signer is unknown or the signature
     /// does not match.
     pub fn verify(&self, sig: &Signature, block_hash: u64, view: u64) -> bool {
-        let vk = match self.verifying_keys.get(&sig.signer) {
+        let vk = match self.public_keys.get(&sig.signer) {
             Some(vk) => vk,
             None => return false, // Unknown signer → reject
         };

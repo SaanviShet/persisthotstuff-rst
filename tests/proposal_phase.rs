@@ -8,6 +8,9 @@ use std::collections::BTreeMap;
 fn leader_proposes_block() {
     let config = Config { n: 4, f: 1, id: 1 , timeout_ms: 5000};
 
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
+
     let mut replica = Replica {
         config: config.clone(),
         current_view: 1,
@@ -19,7 +22,7 @@ fn leader_proposes_block() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
-        keystore: KeyStore::new(4),
+        keystore: keystores[1].clone(),  // Use the keystore for replica id=1
     };
 
     let block_opt = replica.propose(1);
@@ -33,6 +36,9 @@ fn leader_proposes_block() {
 fn non_leader_cannot_propose() {
     let config = Config { n: 4, f: 1, id: 0, timeout_ms: 5000 };
 
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
+
     let mut replica = Replica {
         config: config.clone(),
         current_view: 1,
@@ -44,7 +50,7 @@ fn non_leader_cannot_propose() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
-        keystore: KeyStore::new(4),
+        keystore: keystores[0].clone(),  // Use the keystore for replica id=0
     };
 
     assert!(replica.propose(1).is_none());
@@ -53,7 +59,10 @@ fn non_leader_cannot_propose() {
 #[test]
 fn proposal_validation_accepts_valid() {
     let leader_cfg = Config { n: 4, f: 1, id: 1, timeout_ms: 5000 };
-    let keystore = KeyStore::new(4);
+    
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
+
     let mut leader = Replica {
         config: leader_cfg.clone(),
         current_view: 1,
@@ -65,7 +74,7 @@ fn proposal_validation_accepts_valid() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
-        keystore: keystore.clone(),
+        keystore: keystores[1].clone(),  // Use the keystore for replica id=1
     };
 
     let follower_cfg = Config { n: 4, f: 1, id: 2, timeout_ms: 5000 };
@@ -80,7 +89,7 @@ fn proposal_validation_accepts_valid() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
-        keystore: keystore.clone(),
+        keystore: keystores[2].clone(),
     };
 
     let block = leader.propose(1).expect("leader should propose");
@@ -92,7 +101,10 @@ fn proposal_validation_accepts_valid() {
 #[test]
 fn proposal_validation_rejects_invalid_qc() {
     let leader_cfg = Config { n: 4, f: 1, id: 1, timeout_ms: 5000 };
-    let keystore = KeyStore::new(4);
+
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
+    
     let mut leader = Replica {
         config: leader_cfg.clone(),
         current_view: 1,
@@ -104,7 +116,7 @@ fn proposal_validation_rejects_invalid_qc() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
-        keystore: keystore.clone(),
+        keystore: keystores[1].clone(),
     };
 
     let follower_cfg = Config { n: 4, f: 1, id: 2, timeout_ms: 5000 };
@@ -119,7 +131,7 @@ fn proposal_validation_rejects_invalid_qc() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
-        keystore: keystore.clone(),
+        keystore: keystores[2].clone(),
     };
 
     // Create a block with a QC that has insufficient signatures
