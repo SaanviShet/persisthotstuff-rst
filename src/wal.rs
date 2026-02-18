@@ -632,15 +632,21 @@ mod tests {
         }
         std::fs::write(&path, &raw).unwrap();
 
-        // Re-open and try to read — should detect corruption.
-        let mut wal2 = WAL::open(0, dir.path()).unwrap_or_else(|_| {
-            // open itself reads entries to count them, so corruption
-            // will surface here.
-            panic!("Expected CorruptedEntry error during open");
-        });
-        // If open didn't catch it, read_all will.
-        let result = wal2.read_all();
-        assert!(result.is_err(), "Should detect corrupted entry");
+        // Try to open — should detect corruption either during open or read_all.
+        match WAL::open(0, dir.path()) {
+            Err(WALError::CorruptedEntry { .. }) => {
+                // Success! Corruption detected during open.
+            }
+            Ok(mut wal2) => {
+                // open succeeded, corruption should be caught by read_all.
+                let result = wal2.read_all();
+                assert!(matches!(result, Err(WALError::CorruptedEntry { .. })),
+                        "Should detect corrupted entry");
+            }
+            Err(e) => {
+                panic!("Unexpected error type: {:?}", e);
+            }
+        }
     }
 
     #[test]
