@@ -22,6 +22,8 @@ fn qc_formation_from_votes() {
         timeout_ms: 5000,
         view_start_time: 0,
         keystore: keystores[0].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     let block_hash = 42u64;

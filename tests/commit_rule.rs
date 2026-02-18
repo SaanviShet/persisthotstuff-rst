@@ -23,6 +23,8 @@ fn three_chain_commits_block() {
         timeout_ms: 5000,
         view_start_time: 0,
         keystore: keystores[0].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     // Genesis block B0
@@ -96,6 +98,8 @@ fn insufficient_qc_blocks_dont_commit() {
         timeout_ms: 5000,
         view_start_time: 0,
         keystore: keystores[0].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     // Genesis block B0 (no QC)
@@ -155,6 +159,8 @@ fn commit_log_grows_correctly() {
         timeout_ms: 5000,
         view_start_time: 0,
         keystore: keystores[0].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     // Genesis block B0
@@ -273,6 +279,8 @@ fn cannot_commit_same_block_twice() {
         timeout_ms: 5000,
         view_start_time: 0,
         keystore: keystores[0].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     // Genesis block B0

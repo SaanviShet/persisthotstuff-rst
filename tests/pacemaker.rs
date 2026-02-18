@@ -23,6 +23,8 @@ fn timeout_increments_view() {
         timeout_ms: 1000,
         view_start_time: Replica::current_time_ms(),
         keystore: keystores[0].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     let initial_view = replica.current_view;
@@ -50,6 +52,8 @@ fn view_timeout_clears_vote_pool() {
         timeout_ms: 1000,
         view_start_time: Replica::current_time_ms(),
         keystore: keystores[0].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     // Add some votes
@@ -82,6 +86,8 @@ fn correct_leader_selected_per_view() {
         timeout_ms: 1000,
         view_start_time: Replica::current_time_ms(),
         keystore: keystores[0].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     // Test round-robin leader selection
@@ -114,6 +120,8 @@ fn am_i_leader_works_correctly() {
         timeout_ms: 1000,
         view_start_time: Replica::current_time_ms(),
         keystore: keystores[1].clone(),  // Use the keystore for replica id=1
+        wal: None,
+        snapshot_counter: 0,
     };
 
     // Replica id=1, view=0: leader should be 0 % 4 = 0, so not leader
@@ -148,6 +156,8 @@ fn reset_timer_on_proposal() {
         timeout_ms: 5000,
         view_start_time: 0,  // Old time
         keystore: keystores[0].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     let old_time = replica.view_start_time;
@@ -175,6 +185,8 @@ fn reset_timer_on_commit() {
         timeout_ms: 5000,
         view_start_time: 0,  // Old time
         keystore: keystores[0].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     let old_time = replica.view_start_time;
@@ -202,6 +214,8 @@ fn sequential_view_changes() {
         timeout_ms: 1000,
         view_start_time: Replica::current_time_ms(),
         keystore: keystores[2].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     // Simulate several view changes and check leader transitions

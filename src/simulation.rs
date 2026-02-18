@@ -60,6 +60,8 @@ impl Simulation {
                 timeout_ms: 5000,
                 view_start_time: Replica::current_time_ms(),
                 keystore: keystores[id].clone(),
+                wal: None,
+                snapshot_counter: 0,
             };
             
             // Insert genesis block

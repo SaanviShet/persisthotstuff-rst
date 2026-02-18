@@ -29,6 +29,8 @@ fn main() {
         timeout_ms: 5000,
         view_start_time: 0,
         keystore: keystores[0].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     // Genesis
@@ -127,6 +129,8 @@ fn main() {
         timeout_ms: 5000,
         view_start_time: 0,
         keystore: keystores[1].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     // Replica 2 has slightly different state (simulating network delay/partition)
@@ -172,6 +176,8 @@ fn main() {
         timeout_ms: 5000,
         view_start_time: 0,
         keystore: keystores[2].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     // Replica 3 has same base but different fork

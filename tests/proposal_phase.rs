@@ -23,6 +23,8 @@ fn leader_proposes_block() {
         timeout_ms: 5000,
         view_start_time: 0,
         keystore: keystores[1].clone(),  // Use the keystore for replica id=1
+        wal: None,
+        snapshot_counter: 0,
     };
 
     let block_opt = replica.propose(1);
@@ -51,6 +53,8 @@ fn non_leader_cannot_propose() {
         timeout_ms: 5000,
         view_start_time: 0,
         keystore: keystores[0].clone(),  // Use the keystore for replica id=0
+        wal: None,
+        snapshot_counter: 0,
     };
 
     assert!(replica.propose(1).is_none());
@@ -75,6 +79,8 @@ fn proposal_validation_accepts_valid() {
         timeout_ms: 5000,
         view_start_time: 0,
         keystore: keystores[1].clone(),  // Use the keystore for replica id=1
+        wal: None,
+        snapshot_counter: 0,
     };
 
     let follower_cfg = Config { n: 4, f: 1, id: 2, timeout_ms: 5000 };
@@ -90,6 +96,8 @@ fn proposal_validation_accepts_valid() {
         timeout_ms: 5000,
         view_start_time: 0,
         keystore: keystores[2].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     let block = leader.propose(1).expect("leader should propose");
@@ -117,6 +125,8 @@ fn proposal_validation_rejects_invalid_qc() {
         timeout_ms: 5000,
         view_start_time: 0,
         keystore: keystores[1].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     let follower_cfg = Config { n: 4, f: 1, id: 2, timeout_ms: 5000 };
@@ -132,6 +142,8 @@ fn proposal_validation_rejects_invalid_qc() {
         timeout_ms: 5000,
         view_start_time: 0,
         keystore: keystores[2].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     // Create a block with a QC that has insufficient signatures

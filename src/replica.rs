@@ -6,6 +6,9 @@
 use std::collections::BTreeMap;
 use crate::types::*;
 use crate::config::*;
+use crate::wal::{WAL, LogEntry, ViewChangeReason};
+use crate::snapshot::Snapshot;
+use std::path::Path;
 
 /// Replica structure for the consensus protocol.
 ///
@@ -30,6 +33,11 @@ pub struct Replica {
     pub timeout_ms: u64,
     pub view_start_time: u128,
     pub keystore: KeyStore,
+    /// Optional WAL handle — `None` means persistence is disabled
+    /// (e.g. during unit tests that don't need durability).
+    pub wal: Option<WAL>,
+    /// Monotonically increasing snapshot sequence number.
+    pub snapshot_counter: u64,
 }
 
 use crate::visualiser::{print_block_tree_enhanced, print_commit_log, 
@@ -145,6 +153,22 @@ impl Replica {
             if sigs.len() >= self.config.quorum_size() {
                 let qc = QuorumCert { block_hash, view, signatures: sigs.clone() };
                 self.high_qc = Some(qc.clone());
+
+                // ── WAL: log QC formation + high_qc update ──
+                if let Some(ref mut wal) = self.wal {
+                    let _ = wal.append(&LogEntry::QCFormed {
+                        block_hash,
+                        view,
+                        signer_count: sigs.len(),
+                        timestamp: WAL::now_ms(),
+                    });
+                    let _ = wal.append(&LogEntry::HighQCUpdated {
+                        block_hash,
+                        view,
+                        timestamp: WAL::now_ms(),
+                    });
+                }
+
                 return Some(qc);
             }
         }
@@ -278,6 +302,11 @@ impl Replica {
             }
         }
 
+        // ── WAL: log block insertion BEFORE applying to memory ──
+        if let Some(ref mut wal) = self.wal {
+            let _ = wal.append(&LogEntry::from_block(&block));
+        }
+
         self.block_tree.insert(block.hash, block);
         self.on_inserting_block_proposal(); // Reset timer on valid proposal
         true
@@ -355,6 +384,14 @@ impl Replica {
     /// # Arguments
     /// * `block` - The block to commit
     pub fn execute_and_commit(&mut self, block: Block) {
+        // ── WAL: log commit BEFORE applying ──
+        if let Some(ref mut wal) = self.wal {
+            let _ = wal.append(&LogEntry::from_committed_block(
+                &block,
+                self.committed_log.len(),  // this will be the commit_index
+            ));
+        }
+
         self.committed_log.push(block.clone());
         self.committed_up_to = Some(block.hash);
         // view change on commit
@@ -421,7 +458,19 @@ impl Replica {
     ///
     /// Increments view, resets timer, and clears view-specific votes.
     pub fn on_view_timeout(&mut self) {
+        let old = self.current_view;
         self.current_view += 1;
+
+        // ── WAL: log the view change ──
+        if let Some(ref mut wal) = self.wal {
+            let _ = wal.append(&LogEntry::ViewChanged {
+                old_view: old,
+                new_view: self.current_view,
+                reason: ViewChangeReason::Timeout,
+                timestamp: WAL::now_ms(),
+            });
+        }
+
         self.view_start_time = Self::current_time_ms();
         // Clear votes from previous view (votes are view-specific)
         self.vote_pool.clear();
@@ -455,6 +504,70 @@ impl Replica {
     /// True if this replica is the current leader, false otherwise
     pub fn am_i_leader(&self) -> bool {
         self.config.leader_for_view(self.current_view) == self.config.id
+    }
+
+    // ===== Persistence & Snapshot Methods =====
+
+    /// Attach a WAL handle to this replica so future mutations are logged.
+    pub fn attach_wal(&mut self, wal: WAL) {
+        self.wal = Some(wal);
+    }
+
+    /// Check whether a snapshot should be taken now.
+    ///
+    /// Current policy: every 100 commits.  This keeps the WAL bounded
+    /// and ensures recovery stays fast.
+    pub fn should_snapshot(&self) -> bool {
+        !self.committed_log.is_empty() && self.committed_log.len() % 100 == 0
+    }
+
+    /// Take a snapshot of the current state and truncate the WAL.
+    ///
+    /// # Arguments
+    /// * `data_dir` – directory where snapshots are stored
+    ///
+    /// # Errors
+    /// Propagates I/O errors from snapshot write or WAL truncation.
+    pub fn take_snapshot(&mut self, data_dir: &Path) -> Result<(), String> {
+        // Capture a point-in-time snapshot of the entire state.
+        let snap = Snapshot::capture(
+            self.snapshot_counter,
+            self.config.id,
+            self.current_view,
+            &self.block_tree,
+            &self.committed_log,
+            self.committed_up_to,
+            self.high_qc.as_ref(),
+            self.next_hash,
+        );
+
+        // Write to disk (bincode + SHA-256 sidecar).
+        snap.save(data_dir).map_err(|e| format!("{}", e))?;
+
+        // Log the snapshot event in the WAL so that future WAL readers
+        // know everything before this point is captured.
+        if let Some(ref mut wal) = self.wal {
+            let _ = wal.append(&LogEntry::SnapshotTaken {
+                snapshot_id: self.snapshot_counter,
+                last_committed_hash: self.committed_up_to,
+                timestamp: WAL::now_ms(),
+            });
+
+            // Now truncate the WAL — all prior entries are in the snapshot.
+            wal.truncate_after_snapshot()
+                .map_err(|e| format!("{}", e))?;
+        }
+
+        // Bump the counter so the next snapshot gets a higher sequence.
+        self.snapshot_counter += 1;
+
+        // Delete old snapshots, keeping only the 3 most recent.
+        let _ = Snapshot::cleanup_old(self.config.id, data_dir, 3);
+
+        println!("📸 Snapshot #{} taken for replica {}",
+                 self.snapshot_counter - 1, self.config.id);
+
+        Ok(())
     }
 }
 

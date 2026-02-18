@@ -1,6 +1,9 @@
 pub mod config;
 pub mod crypto;
 pub mod types;
+pub mod wal;
+pub mod snapshot;
+pub mod recovery;
 pub mod replica;
 pub mod visualiser;
 pub mod network;
