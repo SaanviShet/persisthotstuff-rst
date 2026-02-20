@@ -33,7 +33,7 @@ fn main() {
     // Clean up any leftover data from previous runs.
     if data_dir.exists() {
         std::fs::remove_dir_all(data_dir).unwrap();
-        println!("🗑  Cleaned up old data/ directory");
+        println!("Cleaned up old data/ directory");
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -68,7 +68,7 @@ fn main() {
     let wal = WAL::create(config.id, data_dir)
         .expect("Failed to create WAL");
     replica.attach_wal(wal);
-    println!("📝 WAL created at data/replica_0_wal.log");
+    println!("WAL created at data/replica_0_wal.log");
 
     // Insert genesis block.
     let genesis = Block {
@@ -91,7 +91,7 @@ fn main() {
             timestamp: WAL::now_ms(),
         }).unwrap();
     }
-    println!("🧱 Genesis block inserted (hash=0)");
+    println!("Genesis block inserted (hash=0)");
 
     // Build a chain: B1 → B2 → B3 → B4 (each with a QC on its parent).
     let blocks_data = vec![
@@ -117,7 +117,7 @@ fn main() {
         if let Some(ref mut wal) = replica.wal {
             wal.append(&LogEntry::from_block(&block)).unwrap();
         }
-        println!("🧱 Block {} inserted (view={}, proposer=R{})", hash, view, proposer);
+        println!("Block {} inserted (view={}, proposer=R{})", hash, view, proposer);
     }
 
     // Update high_qc to the QC on B3 (carried by B4).
@@ -129,14 +129,14 @@ fn main() {
             timestamp: WAL::now_ms(),
         }).unwrap();
     }
-    println!("⬆  high_qc updated to QC(block=3, view=3)");
+    println!("high_qc updated to QC(block=3, view=3)");
 
     // Commit using the 3-chain rule.
     // 3-chain: B0 ← B1[QC] ← B2[QC] commits B0
     // 3-chain: B1 ← B2[QC] ← B3[QC] commits B1
     // 3-chain: B2 ← B3[QC] ← B4[QC] commits B2
     replica.commit_all();
-    println!("✅ Committed {} block(s) via 3-chain rule", replica.committed_log.len());
+    println!("Committed {} block(s) via 3-chain rule", replica.committed_log.len());
 
     // Advance to view 5 via a timeout.
     replica.start_view(5);
@@ -148,7 +148,7 @@ fn main() {
             timestamp: WAL::now_ms(),
         }).unwrap();
     }
-    println!("🔄 View advanced to {}", replica.current_view);
+    println!("View advanced to {}", replica.current_view);
 
     // Record the state before the "crash".
     let pre_crash_view = replica.current_view;
@@ -158,7 +158,7 @@ fn main() {
     let pre_crash_committed_hashes: Vec<Hash> =
         replica.committed_log.iter().map(|b| b.hash).collect();
 
-    println!("\n📊 Pre-crash state:");
+    println!("\nPre-crash state:");
     println!("   View:            {}", pre_crash_view);
     println!("   Blocks in tree:  {}", pre_crash_tree_size);
     println!("   Committed:       {}", pre_crash_committed);
@@ -181,12 +181,12 @@ fn main() {
         replica.next_hash,
     );
     let snap_path = snap.save(data_dir).expect("Failed to save snapshot");
-    println!("📸 Snapshot saved to {:?}", snap_path);
+    println!("Snapshot saved to {:?}", snap_path);
 
     // Truncate the WAL (all entries are now in the snapshot).
     if let Some(ref mut wal) = replica.wal {
         wal.truncate_after_snapshot().expect("Failed to truncate WAL");
-        println!("✂  WAL truncated (entries now in snapshot)");
+        println!("WAL truncated (entries now in snapshot)");
     }
 
     // Simulate one MORE operation AFTER the snapshot, so recovery
@@ -202,21 +202,21 @@ fn main() {
     if let Some(ref mut wal) = replica.wal {
         wal.append(&LogEntry::from_block(&post_snap_block)).unwrap();
     }
-    println!("🧱 Block 5 inserted AFTER snapshot (this must survive recovery via WAL)");
+    println!("Block 5 inserted AFTER snapshot (this must survive recovery via WAL)");
 
     let pre_crash_tree_size = replica.block_tree.len();  // now 6
 
     // ─────────────────────────────────────────────────────────────
-    // PHASE 3: 💥 CRASH — drop everything in memory.
+    // PHASE 3: CRASH -- drop everything in memory.
     // ─────────────────────────────────────────────────────────────
-    println!("\n━━━ PHASE 3: 💥 CRASH ━━━\n");
+    println!("\n━━━ PHASE 3: CRASH ━━━\n");
     drop(replica);   // All in-memory state is gone!
-    println!("💥 Replica dropped — all memory lost!");
+    println!("Replica dropped -- all memory lost!");
     println!("   Only files on disk remain:");
     for entry in std::fs::read_dir(data_dir).unwrap() {
         let entry = entry.unwrap();
         let size = entry.metadata().unwrap().len();
-        println!("   📄 {} ({} bytes)", entry.file_name().to_string_lossy(), size);
+        println!("   {} ({} bytes)", entry.file_name().to_string_lossy(), size);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -228,7 +228,7 @@ fn main() {
         .expect("Recovery failed!");
     recovered.attach_wal(wal);
 
-    println!("\n📊 Post-recovery state:");
+    println!("\nPost-recovery state:");
     println!("   View:            {}", recovered.current_view);
     println!("   Blocks in tree:  {}", recovered.block_tree.len());
     println!("   Committed:       {}", recovered.committed_log.len());
@@ -247,45 +247,45 @@ fn main() {
 
     // Check view.
     if recovered.current_view == pre_crash_view {
-        println!("   ✅ View matches: {}", pre_crash_view);
+        println!("   [OK] View matches: {}", pre_crash_view);
     } else {
-        println!("   ❌ View mismatch: expected {}, got {}",
+        println!("   [FAIL] View mismatch: expected {}, got {}",
                  pre_crash_view, recovered.current_view);
         all_ok = false;
     }
 
     // Check block tree size (should be 6: genesis + B1-B4 + B5).
     if recovered.block_tree.len() == pre_crash_tree_size {
-        println!("   ✅ Block tree size matches: {}", pre_crash_tree_size);
+        println!("   [OK] Block tree size matches: {}", pre_crash_tree_size);
     } else {
-        println!("   ❌ Block tree size mismatch: expected {}, got {}",
+        println!("   [FAIL] Block tree size mismatch: expected {}, got {}",
                  pre_crash_tree_size, recovered.block_tree.len());
         all_ok = false;
     }
 
     // Check committed log.
     if recovered_hashes == pre_crash_committed_hashes {
-        println!("   ✅ Committed log matches: {:?}", pre_crash_committed_hashes);
+        println!("   [OK] Committed log matches: {:?}", pre_crash_committed_hashes);
     } else {
-        println!("   ❌ Committed log mismatch: expected {:?}, got {:?}",
+        println!("   [FAIL] Committed log mismatch: expected {:?}, got {:?}",
                  pre_crash_committed_hashes, recovered_hashes);
         all_ok = false;
     }
 
     // Check high_qc.
     if recovered_hqc == pre_crash_high_qc {
-        println!("   ✅ High QC matches: {:?}", pre_crash_high_qc);
+        println!("   [OK] High QC matches: {:?}", pre_crash_high_qc);
     } else {
-        println!("   ❌ High QC mismatch: expected {:?}, got {:?}",
+        println!("   [FAIL] High QC mismatch: expected {:?}, got {:?}",
                  pre_crash_high_qc, recovered_hqc);
         all_ok = false;
     }
 
     // Check that block 5 (inserted AFTER snapshot) survived.
     if recovered.block_tree.contains_key(&5) {
-        println!("   ✅ Post-snapshot block 5 recovered from WAL");
+        println!("   [OK] Post-snapshot block 5 recovered from WAL");
     } else {
-        println!("   ❌ Post-snapshot block 5 is MISSING!");
+        println!("   [FAIL] Post-snapshot block 5 is MISSING!");
         all_ok = false;
     }
 
@@ -302,21 +302,21 @@ fn main() {
     if let Some(ref mut wal) = recovered.wal {
         wal.append(&LogEntry::from_block(&block6)).unwrap();
     }
-    println!("   🧱 Block 6 appended after recovery — WAL still works!");
+    println!("   Block 6 appended after recovery -- WAL still works!");
 
     // Final verdict.
     println!();
     if all_ok {
         println!("╔═══════════════════════════════════════════════════════════╗");
-        println!("║   ✅  ALL CHECKS PASSED — Recovery is correct!          ║");
+        println!("║   ALL CHECKS PASSED -- Recovery is correct!          ║");
         println!("╚═══════════════════════════════════════════════════════════╝");
     } else {
         println!("╔═══════════════════════════════════════════════════════════╗");
-        println!("║   ❌  SOME CHECKS FAILED — see above for details        ║");
+        println!("║   SOME CHECKS FAILED -- see above for details        ║");
         println!("╚═══════════════════════════════════════════════════════════╝");
     }
 
     // Clean up demo data.
     std::fs::remove_dir_all(data_dir).unwrap();
-    println!("\n🗑  Cleaned up data/ directory\n");
+    println!("\nCleaned up data/ directory\n");
 }

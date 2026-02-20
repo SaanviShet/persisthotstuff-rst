@@ -370,11 +370,11 @@ All replicas advance to next view (new leader)
 **Choice:** Centralized orchestrator
 
 **Trade-offs:**
-- ✅ Full observability
-- ✅ Deterministic testing
-- ✅ Easy verification
-- ❌ Not realistic for production
-- ❌ Doesn't test true concurrency
+- Full observability
+- Deterministic testing
+- Easy verification
+- Not realistic for production
+- Doesn't test true concurrency
 
 **Justification:** Primary goal is protocol verification, not performance benchmarking
 
@@ -574,11 +574,11 @@ pub struct NetworkFault {
 
 ### What We Achieved
 
-✅ **Message Infrastructure**: Complete network abstraction with statistics  
-✅ **Multi-Replica System**: 4 independent replicas with shared genesis  
-✅ **Full Consensus Flow**: Propose → Vote → QC → Commit cycle  
-✅ **Safety Verification**: Automated checking of commit consistency  
-✅ **Observability**: Detailed logging and visualization  
+- **Message Infrastructure**: Complete network abstraction with statistics  
+- **Multi-Replica System**: 4 independent replicas with shared genesis  
+- **Full Consensus Flow**: Propose → Vote → QC → Commit cycle  
+- **Safety Verification**: Automated checking of commit consistency  
+- **Observability**: Detailed logging and visualization  
 
 ### Protocol Understanding
 
@@ -620,7 +620,7 @@ The next phase (Byzantine faults, leader failures, network partitions) builds di
 - Examples: 2 (multi_replica_demo, normal_case)
 
 **Verification Status:**
-- ✅ Safety: Verified across all scenarios
-- ✅ Validity: All commits properly formed
-- ✅ Message flow: Correct ordering
-- ✅ QC formation: Quorum thresholds met
+- Safety: Verified across all scenarios
+- Validity: All commits properly formed
+- Message flow: Correct ordering
+- QC formation: Quorum thresholds met

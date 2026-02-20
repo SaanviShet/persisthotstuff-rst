@@ -22,10 +22,10 @@
 ## Overview
 
 The current PersistHotStuff implementation operates entirely **in-memory**, meaning:
-- ❌ All state is lost on crash/restart
-- ❌ No way to recover from failures
-- ❌ Cannot persist committed blocks
-- ❌ View changes and QCs are not durable
+- All state is lost on crash/restart
+- No way to recover from failures
+- Cannot persist committed blocks
+- View changes and QCs are not durable
 
 This design document outlines adding **persistence** to make the system fault-tolerant and production-ready.
 
@@ -38,13 +38,13 @@ This design document outlines adding **persistence** to make the system fault-to
 ```rust
 pub struct Replica {
     pub config: Config,                    // Configuration - can be reloaded
-    pub current_view: u64,                 // ⚠️ CRITICAL: Current view
-    pub block_tree: BTreeMap<Hash, Block>, // ⚠️ CRITICAL: All blocks
-    pub high_qc: Option<QuorumCert>,       // ⚠️ CRITICAL: Highest QC
+    pub current_view: u64,                 // CRITICAL: Current view
+    pub block_tree: BTreeMap<Hash, Block>, // CRITICAL: All blocks
+    pub high_qc: Option<QuorumCert>,       // CRITICAL: Highest QC
     pub vote_pool: BTreeMap<...>,          // Transient - can be cleared
     pub next_hash: Hash,                   // Can be recalculated
-    pub committed_log: Vec<Block>,         // ⚠️ CRITICAL: Committed blocks
-    pub committed_up_to: Option<Hash>,     // ⚠️ CRITICAL: Commit pointer
+    pub committed_log: Vec<Block>,         // CRITICAL: Committed blocks
+    pub committed_up_to: Option<Hash>,     // CRITICAL: Commit pointer
     pub timeout_ms: u64,                   // Configuration
     pub view_start_time: u128,             // Transient - reset on restart
     pub keystore: KeyStore,                // Can be reloaded
@@ -63,21 +63,21 @@ pub struct Replica {
 ## Design Goals
 
 ### **Correctness (Safety):**
-✅ Never lose committed blocks (durability guarantee)  
-✅ Maintain commit order consistency  
-✅ Prevent double-voting after recovery  
-✅ Ensure view monotonicity (never go backwards)
+- Never lose committed blocks (durability guarantee)  
+- Maintain commit order consistency  
+- Prevent double-voting after recovery  
+- Ensure view monotonicity (never go backwards)
 
 ### **Performance:**
-✅ Minimize I/O overhead on critical path  
-✅ Asynchronous writes where possible  
-✅ Batch log entries efficiently  
-✅ Fast recovery (snapshot + incremental WAL)
+- Minimize I/O overhead on critical path  
+- Asynchronous writes where possible  
+- Batch log entries efficiently  
+- Fast recovery (snapshot + incremental WAL)
 
 ### **Simplicity:**
-✅ Clear separation: WAL module vs Replica logic  
-✅ Easy to test and verify  
-✅ Graceful degradation if persistence fails
+- Clear separation: WAL module vs Replica logic  
+- Easy to test and verify  
+- Graceful degradation if persistence fails
 
 ---
 
@@ -216,12 +216,12 @@ Think of it like a **diary** where you can only add new pages, never erase old o
 
 | **Append-Only**                          | **Random Writes (Overwrite)**           |
 |------------------------------------------|-----------------------------------------|
-| ✅ **Sequential I/O** (~100-200 MB/s)    | ❌ **Random I/O** (~1-10 MB/s)          |
-| ✅ **Simple crash recovery**             | ❌ Complex rollback needed              |
-| ✅ **No data loss on partial write**     | ❌ Partial write corrupts data          |
-| ✅ **Full audit trail** (all history)    | ❌ History lost on overwrite            |
-| ✅ **No file fragmentation**             | ❌ Fragmentation over time              |
-| ✅ **Concurrent readers safe**           | ❌ Readers need locks                   |
+| Yes - **Sequential I/O** (~100-200 MB/s) | No - **Random I/O** (~1-10 MB/s)       |
+| Yes - **Simple crash recovery**          | No - Complex rollback needed            |
+| Yes - **No data loss on partial write**  | No - Partial write corrupts data        |
+| Yes - **Full audit trail** (all history) | No - History lost on overwrite          |
+| Yes - **No file fragmentation**          | No - Fragmentation over time            |
+| Yes - **Concurrent readers safe**        | No - Readers need locks                 |
 
 **Key Insight:** Hard drives and SSDs are **optimized for sequential writes**. Appending is 10-100x faster than random writes!
 
@@ -282,9 +282,9 @@ Step 3: After Reading (Maybe Corrupted)
 
 Step 4: Verification
 if (stored_checksum == computed_checksum):
-    ✅ Data is intact
+    Data is intact [OK]
 else:
-    ❌ CORRUPTION DETECTED!
+    CORRUPTION DETECTED! [FAIL]
 ```
 
 #### **Types of Checksums:**
@@ -297,28 +297,28 @@ else:
 | **xxHash**    | 4/8 bytes| Extremely Fast | Medium                   | High-performance systems  |
 
 **For WAL, we use CRC32 because:**
-- ✅ Fast to compute (~500 MB/s)
-- ✅ Good enough for detecting disk corruption
-- ✅ Small overhead (4 bytes per entry)
-- ✅ Standard library support
+- Fast to compute (~500 MB/s)
+- Good enough for detecting disk corruption
+- Small overhead (4 bytes per entry)
+- Standard library support
 
 #### **What Corruption Can Checksums Detect?**
 
 ```
-✅ Bit flips (cosmic rays, bad RAM)
+[YES] Bit flips (cosmic rays, bad RAM)
    Original: 0b10101010
    Corrupted: 0b10101011  ← Single bit flipped
    
-✅ Disk sector errors
+[YES] Disk sector errors
    Entire sector returns garbage data
    
-✅ Partial writes (power loss during write)
+[YES] Partial writes (power loss during write)
    Only first half of entry written to disk
    
-✅ Silent data corruption
+[YES] Silent data corruption
    Drive returns wrong data without error
    
-❌ Intentional malicious tampering (use SHA256 for this)
+[NO] Intentional malicious tampering (use SHA256 for this)
 ```
 
 ### **Detailed File Structure**
@@ -360,10 +360,10 @@ Each entry follows this **framed** format:
 3. **Payload:** Actual log entry data
 
 **Why this framing?**
-- ✅ Self-describing: Each entry contains its own size
-- ✅ Variable length: Entries can be different sizes
-- ✅ Corruption detection: Checksum per entry
-- ✅ Fast seeking: Can skip entries by length
+- Self-describing: Each entry contains its own size
+- Variable length: Entries can be different sizes
+- Corruption detection: Checksum per entry
+- Fast seeking: Can skip entries by length
 
 #### **3. Entry Payload (Serialized with Bincode):**
 
@@ -420,7 +420,7 @@ pub fn append(&mut self, entry: LogEntry) -> Result<(), WALError> {
     
     // STEP 5: CRITICAL - Force to disk (fsync)
     self.file.sync_all()?;
-    // ☝️ This is what makes it durable!
+    // This is what makes it durable!
     // Without fsync, data might stay in OS buffer cache
     
     Ok(())
@@ -433,13 +433,13 @@ pub fn append(&mut self, entry: LogEntry) -> Result<(), WALError> {
 Without fsync:
 1. Write to file → Goes to OS page cache (RAM)
 2. OS writes to disk... eventually (5-30 seconds)
-3. Power loss before flush → DATA LOST! ❌
+3. Power loss before flush → DATA LOST!
 
 With fsync:
 1. Write to file → Goes to OS page cache
 2. fsync() → Forces immediate disk write
 3. Returns only after disk confirms write
-4. Power loss after fsync → Data is safe ✅
+4. Power loss after fsync → Data is safe
 ```
 
 **Performance Impact:**
@@ -565,9 +565,9 @@ assert!(matches!(entries[1], LogEntry::BlockCommitted { .. }));
 Timeline:
 1. append(Entry A) → write length, checksum, payload
 2. fsync() → disk commits write
-3. fsync() returns successfully ✅
-4. 💥 CRASH
-5. Recovery: Read finds complete Entry A with valid checksum ✅
+3. fsync() returns successfully
+4. ** CRASH **
+5. Recovery: Read finds complete Entry A with valid checksum [OK]
 
 Result: Entry A is recovered successfully
 ```
@@ -578,12 +578,12 @@ Result: Entry A is recovered successfully
 Timeline:
 1. append(Entry B) → write length, checksum
 2. Writing payload... (only 50% written)
-3. 💥 CRASH (before fsync)
+3. ** CRASH ** (before fsync)
 4. Recovery: 
    - Read length: OK
    - Read checksum: OK
    - Read payload: Only 60 bytes instead of 120
-   - read_exact() fails with UnexpectedEof ❌
+   - read_exact() fails with UnexpectedEof [FAIL]
 
 Result: Partial entry detected, log stops at last valid entry
 ```
@@ -594,7 +594,7 @@ Result: Partial entry detected, log stops at last valid entry
 Timeline:
 1. append(Entry C) → write length, checksum, payload
 2. All data in OS buffer cache (not on disk yet)
-3. 💥 CRASH (before fsync)
+3. ** CRASH ** (before fsync)
 4. Recovery: Log doesn't contain Entry C at all
 
 Result: Entry C is lost, but consistency maintained
@@ -606,15 +606,15 @@ Result: Entry C is lost, but consistency maintained
 
 ```
 Timeline:
-1. Entry D written and fsynced successfully ✅
+1. Entry D written and fsynced successfully
 2. Years pass...
-3. Cosmic ray flips a bit in the payload on disk 🌌
+3. Cosmic ray flips a bit in the payload on disk
 4. Recovery:
    - Read length: OK
    - Read checksum: 0xABCD1234 (stored)
    - Read payload: "Block 5 c0mmitted" (corrupted)
    - Compute checksum: 0xABCD9999 (different!)
-   - checksum_mismatch! ❌
+   - checksum_mismatch! [FAIL]
 
 Result: Corruption detected, recovery fails safely
 ```
@@ -655,9 +655,9 @@ pub fn append_batch(&mut self, entries: Vec<LogEntry>) -> Result<(), WALError> {
 ```
 
 **Trade-off:**
-- ✅ 10x faster for bulk writes
-- ⚠️ If crash before batch fsync, lose entire batch
-- 👉 Use for non-critical operations or async logging
+- 10x faster for bulk writes
+- [WARN] If crash before batch fsync, lose entire batch
+- Tip: Use for non-critical operations or async logging
 
 ### **Comparison to Other Systems**
 
@@ -825,11 +825,11 @@ impl Replica {
         
         // Step 1: Try to load snapshot
         let mut replica = if let Ok(snapshot) = Snapshot::load(replica_id) {
-            println!("📦 Loaded snapshot at block {}", 
+            println!("Loaded snapshot at block {}", 
                      snapshot.last_committed_block);
             Self::from_snapshot(config, snapshot)
         } else {
-            println!("🆕 No snapshot found, starting fresh");
+            println!("No snapshot found, starting fresh");
             Self::new(config)
         };
         
@@ -837,7 +837,7 @@ impl Replica {
         let mut wal = WAL::open(replica_id)?;
         let entries = wal.read_all()?;
         
-        println!("📝 Replaying {} WAL entries...", entries.len());
+        println!("Replaying {} WAL entries...", entries.len());
         
         for (idx, entry) in entries.iter().enumerate() {
             replica.replay_entry(entry)?;
@@ -854,7 +854,7 @@ impl Replica {
         // Step 4: Attach WAL for future writes
         replica.wal = Some(wal);
         
-        println!("✅ Recovery complete!");
+        println!("Recovery complete!");
         println!("   Current view: {}", replica.current_view);
         println!("   Blocks in tree: {}", replica.block_tree.len());
         println!("   Committed blocks: {}", replica.committed_log.len());
@@ -1251,9 +1251,9 @@ Snapshot size:
 
 This persistence layer adds **production-grade fault tolerance** to PersistHotStuff:
 
-✅ **Safety:** Committed blocks never lost  
-✅ **Liveness:** Replicas recover and continue  
-✅ **Performance:** Snapshots keep recovery fast  
-✅ **Simplicity:** Clean WAL abstraction  
+- **Safety:** Committed blocks never lost  
+- **Liveness:** Replicas recover and continue  
+- **Performance:** Snapshots keep recovery fast  
+- **Simplicity:** Clean WAL abstraction  
 
 **Next Steps:** Start with Phase 1 (Basic WAL) implementation!

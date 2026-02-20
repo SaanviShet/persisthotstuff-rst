@@ -564,7 +564,7 @@ impl Replica {
         // Delete old snapshots, keeping only the 3 most recent.
         let _ = Snapshot::cleanup_old(self.config.id, data_dir, 3);
 
-        println!("📸 Snapshot #{} taken for replica {}",
+        println!("Snapshot #{} taken for replica {}",
                  self.snapshot_counter - 1, self.config.id);
 
         Ok(())

@@ -105,7 +105,7 @@ pub fn recover(
         mut next_hash,
     ) = match Snapshot::load_latest(replica_id, data_dir) {
         Ok(snap) => {
-            println!("📦 Loaded snapshot #{} for replica {} (view {}, {} committed blocks)",
+            println!("Loaded snapshot #{} for replica {} (view {}, {} committed blocks)",
                      snap.snapshot_id, replica_id, snap.current_view,
                      snap.committed_log.len());
 
@@ -125,7 +125,7 @@ pub fn recover(
         }
         Err(SnapshotError::NotFound) => {
             // First boot — no snapshot on disk yet.
-            println!("🆕 No snapshot found for replica {}, starting fresh", replica_id);
+            println!("No snapshot found for replica {}, starting fresh", replica_id);
             (BTreeMap::new(), Vec::new(), None, None, 0u64, 1u64)
         }
         Err(e) => {
@@ -141,7 +141,7 @@ pub fn recover(
         let mut w = WAL::open(replica_id, data_dir)?;
         let entries = w.read_all()?;
 
-        println!("📝 Replaying {} WAL entries for replica {}…", entries.len(), replica_id);
+        println!("Replaying {} WAL entries for replica {}...", entries.len(), replica_id);
 
         for (idx, entry) in entries.iter().enumerate() {
             replay_entry(
@@ -163,7 +163,7 @@ pub fn recover(
         w
     } else {
         // No WAL exists yet — create one.
-        println!("📝 Creating new WAL for replica {}", replica_id);
+        println!("Creating new WAL for replica {}", replica_id);
         WAL::create(replica_id, data_dir)?
     };
 
@@ -202,7 +202,7 @@ pub fn recover(
         snapshot_counter: 0,
     };
 
-    println!("✅ Recovery complete for replica {}", replica_id);
+    println!("Recovery complete for replica {}", replica_id);
     println!("   View:            {}", replica.current_view);
     println!("   Blocks in tree:  {}", replica.block_tree.len());
     println!("   Committed:       {}", replica.committed_log.len());

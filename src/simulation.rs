@@ -119,7 +119,7 @@ impl Simulation {
         let proposal = self.replicas[leader_id].propose_with_hash(current_view, unique_hash);
         if proposal.is_none() {
             if self.verbose {
-                println!("  ❌ Leader failed to propose");
+                println!("  [FAIL] Leader failed to propose");
             }
             return false;
         }
@@ -178,7 +178,7 @@ impl Simulation {
                     }
                 } else {
                     if self.verbose {
-                        println!("  ❌ Replica {} rejected block {}", to, block.hash);
+                        println!("  [FAIL] Replica {} rejected block {}", to, block.hash);
                     }
                 }
             }
@@ -205,7 +205,7 @@ impl Simulation {
                         if let Some(qc) = leader.handle_vote(vote) {
                             qc_formed = Some(qc.clone());
                             if self.verbose {
-                                println!("  🎉 QC formed for block {} with {} signatures!", 
+                                println!("  [QC] Formed for block {} with {} signatures!", 
                                          qc.block_hash, qc.signatures.len());
                             }
                         }
@@ -271,7 +271,7 @@ impl Simulation {
         self.step += 1;
         
         if self.verbose {
-            println!("\n✅ Round {} completed successfully", self.step);
+            println!("\n[OK] Round {} completed successfully", self.step);
             println!("   Votes collected: {}", votes_collected);
             println!("   QC formed: {}", if qc_formed.is_some() { "Yes" } else { "No" });
         }
@@ -281,14 +281,14 @@ impl Simulation {
     
     /// Run the simulation for multiple rounds
     pub fn run(&mut self, rounds: usize) {
-        println!("\n🚀 Starting multi-replica simulation with {} replicas", self.replicas.len());
+        println!("\nStarting multi-replica simulation with {} replicas", self.replicas.len());
         println!("   Max rounds: {}", rounds);
         println!("   Byzantine tolerance: f = {}", self.replicas[0].config.f);
         println!();
         
         for round in 0..rounds {
             if !self.run_one_round() {
-                println!("\n⚠️  Simulation stopped at round {}", round + 1);
+                println!("\n[WARN] Simulation stopped at round {}", round + 1);
                 break;
             }
         }
@@ -343,7 +343,7 @@ impl Simulation {
             
             for i in 0..min_len {
                 if reference[i].hash != replica.committed_log[i].hash {
-                    println!("❌ SAFETY VIOLATION!");
+                    println!("[FAIL] SAFETY VIOLATION!");
                     println!("   Replica 0 committed block {} at position {}", reference[i].hash, i);
                     println!("   Replica {} committed block {} at position {}", idx, replica.committed_log[i].hash, i);
                     return false;
@@ -351,7 +351,7 @@ impl Simulation {
             }
         }
         
-        println!("✅ Safety verified: All replicas have consistent committed sequences");
+        println!("[OK] Safety verified: All replicas have consistent committed sequences");
         println!("   Committed blocks: {}", reference.len());
         
         true

@@ -10,7 +10,7 @@ fn main() {
     // Create simulation with 4 replicas, f=1
     let mut sim = Simulation::new(4, 1, 100, false);
     
-    println!("\n📊 Configuration:");
+    println!("\nConfiguration:");
     println!("   Number of replicas (n): 4");
     println!("   Byzantine tolerance (f): 1");
     println!("   Quorum size (2f+1): 3");
@@ -31,7 +31,7 @@ fn main() {
     
     // Check that all replicas committed the same blocks
     let committed_count = sim.replicas[0].committed_log.len();
-    println!("\n📈 Results:");
+    println!("\nResults:");
     println!("   Total blocks committed: {}", committed_count);
     println!("   Expected commits: >= 8 (3-chain rule has 2-block lag)");
     
@@ -41,7 +41,7 @@ fn main() {
                    "Replica {} has different commit count!", idx);
     }
     
-    println!("\n✅ Normal case simulation successful!");
+    println!("\n[OK] Normal case simulation successful!");
     println!("   ✓ All replicas synchronized");
     println!("   ✓ Consistent commit sequences");
     println!("   ✓ No safety violations");

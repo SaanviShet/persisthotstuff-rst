@@ -48,5 +48,5 @@ fn main() {
     
     print_view_timeline(&sim.replicas[0].block_tree, sim.replicas[0].current_view);
     
-    println!("\n✅ Multi-replica simulation completed successfully!\n");
+    println!("\n[OK] Multi-replica simulation completed successfully!\n");
 }

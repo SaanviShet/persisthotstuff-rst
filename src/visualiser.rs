@@ -257,9 +257,9 @@ pub fn compare_replicas_side_by_side(
     
     // Compare committed logs
     if data1.committed_log == data2.committed_log {
-        println!("\n{}", "✅ Committed logs are IDENTICAL (Safety preserved!)".green().bold());
+        println!("\n{}", "[OK] Committed logs are IDENTICAL (Safety preserved!)".green().bold());
     } else {
-        println!("\n{}", "⚠️  WARNING: Committed logs DIFFER!".red().bold());
+        println!("\n{}", "[WARN] Committed logs DIFFER!".red().bold());
     }
     
     println!("{}", "═".repeat(70));

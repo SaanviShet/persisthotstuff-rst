@@ -16,7 +16,7 @@ fn main() {
     println!("║   PersistHotStuff Byzantine Failures & Attack Scenarios   ║");
     println!("╚════════════════════════════════════════════════════════════╝");
     
-    println!("\n🔧 System Configuration:");
+    println!("\nSystem Configuration:");
     println!("   Total replicas (n): 4");
     println!("   Byzantine tolerance (f): 1");
     println!("   Quorum size (2f+1): 3");
@@ -37,7 +37,7 @@ fn main() {
     // Scenario 5: Byzantine Leader Equivocation
     scenario_5_byzantine_leader();
     
-    println!("\n✅ All Byzantine failure scenarios completed!\n");
+    println!("\n[OK] All Byzantine failure scenarios completed!\n");
 }
 
 /// Scenario 1: Byzantine Replica Sending Invalid Votes (f Byzantine replicas tolerated)
@@ -48,7 +48,7 @@ fn scenario_1_byzantine_votes() {
     println!("{}", "SCENARIO 1: Byzantine Replica Sending Invalid Votes".bright_red().bold());
     println!("{}", "=".repeat(70).bright_red());
     
-    println!("\n📋 Scenario Description:");
+    println!("\nScenario Description:");
     println!("   - Replica 3 is Byzantine and attempts to disrupt consensus");
     println!("   - Sends vote for non-existent block AND invalid signature");
     println!("   - System tolerates up to f=1 Byzantine replica");
@@ -96,7 +96,7 @@ fn scenario_1_byzantine_votes() {
                 if replica.validate_and_insert_proposal(block.clone()) {
                     if to == 3 {
                         // Byzantine behavior: Try multiple attack vectors
-                        println!("⚠️  Byzantine Replica 3 attempting multiple attacks:");
+                        println!("[WARN] Byzantine Replica 3 attempting multiple attacks:");
                         
                         // Attack 1: Vote for non-existent block
                         println!("   Attack 1: Voting for non-existent block (hash: 99999)");
@@ -139,14 +139,14 @@ fn scenario_1_byzantine_votes() {
                 
                 if let Some(qc) = leader.handle_vote(vote) {
                     qc_formed = true;
-                    println!("\n🎉 QC formed with {} signatures!", qc.signatures.len());
+                    println!("\n[QC] Formed with {} signatures!", qc.signatures.len());
                     println!("   System tolerated Byzantine replica (need 2f+1 = 3 votes)");
                     println!("   Byzantine attacks were REJECTED by validation checks!");
                     break;
                 } else {
                     if from == 3 {
                         invalid_votes += 1;
-                        println!("   ❌ Byzantine vote from R{} REJECTED", from);
+                        println!("   [FAIL] Byzantine vote from R{} REJECTED", from);
                     } else {
                         valid_votes += 1;
                         println!("   ✓ Valid vote from R{} accepted (total: {})", from, valid_votes);
@@ -156,12 +156,12 @@ fn scenario_1_byzantine_votes() {
         }
         
         if !qc_formed {
-            println!("\n⚠️  QC not yet formed - collected {} valid votes, rejected {} invalid votes", 
+            println!("\n[WARN] QC not yet formed - collected {} valid votes, rejected {} invalid votes", 
                      valid_votes, invalid_votes);
         }
     }
     
-    println!("\n✅ Scenario 1 Result: System can tolerate up to f=1 Byzantine replicas!");
+    println!("\n[OK] Scenario 1 Result: System can tolerate up to f=1 Byzantine replicas!");
 }
 
 /// Scenario 2: Network Message Delays
@@ -171,7 +171,7 @@ fn scenario_2_message_delays() {
     println!("{}", "SCENARIO 2: Network Message Delays".bright_yellow().bold());
     println!("{}", "=".repeat(70).bright_yellow());
     
-    println!("\n📋 Scenario Description:");
+    println!("\nScenario Description:");
     println!("   - Messages from Replica 2 are delayed");
     println!("   - System makes progress with 3 responsive replicas (R0, R1, R3)");
     println!("   - QC forms without the delayed replica");
@@ -210,7 +210,7 @@ fn scenario_2_message_delays() {
         for msg in proposals_processed {
             if let Message::Proposal { from, to, block } = msg {
                 if to == 2 {
-                    println!("⏱️  Message to Replica 2 DELAYED (simulating network latency)");
+                    println!("[DELAY] Message to Replica 2 DELAYED (simulating network latency)");
                     continue; // Skip processing for R2
                 }
                 
@@ -239,7 +239,7 @@ fn scenario_2_message_delays() {
                 let leader = &mut sim.replicas[to as usize];
                 if let Some(qc) = leader.handle_vote(vote) {
                     qc_formed = true;
-                    println!("\n🎉 QC formed with {} votes (without delayed Replica 2)!", qc.signatures.len());
+                    println!("\n[QC] Formed with {} votes (without delayed Replica 2)!", qc.signatures.len());
                     println!("   System made progress despite network delays!");
                     break;
                 }
@@ -247,11 +247,11 @@ fn scenario_2_message_delays() {
         }
         
         if !qc_formed {
-            println!("\n⚠️  Collected {} votes - need 3 for QC", vote_count);
+            println!("\n[WARN] Collected {} votes - need 3 for QC", vote_count);
         }
     }
     
-    println!("\n✅ Scenario 2 Result: System tolerated network delays successfully!");
+    println!("\n[OK] Scenario 2 Result: System tolerated network delays successfully!");
 }
 
 /// Scenario 3: Leader Failure (Timeout and View Change)
@@ -261,7 +261,7 @@ fn scenario_3_leader_failure() {
     println!("{}", "SCENARIO 3: Leader Failure and View Change".bright_blue().bold());
     println!("{}", "=".repeat(70).bright_blue());
     
-    println!("\n📋 Scenario Description:");
+    println!("\nScenario Description:");
     println!("   - Current leader (R0) fails and doesn't propose");
     println!("   - Replicas timeout waiting for proposal");
     println!("   - System triggers view change to new leader (R1)");
@@ -274,7 +274,7 @@ fn scenario_3_leader_failure() {
     println!("Current leader: Replica {}", sim.current_leader());
     
     println!("\n--- Leader Fails to Propose (Simulating Crash) ---");
-    println!("⚠️  Replica {} is unresponsive...", sim.current_leader());
+    println!("[WARN] Replica {} is unresponsive...", sim.current_leader());
     
     // Simulate timeout - all replicas move to next view
     println!("\n--- Replicas Timing Out ---");
@@ -336,7 +336,7 @@ fn scenario_3_leader_failure() {
                 let leader = &mut sim.replicas[to as usize];
                 if let Some(qc) = leader.handle_vote(vote) {
                     qc_formed = true;
-                    println!("🎉 QC formed in new view {} with {} votes!", qc.view, qc.signatures.len());
+                    println!("[QC] Formed in new view {} with {} votes!", qc.view, qc.signatures.len());
                     println!("   View change successful - system recovered!");
                     break;
                 }
@@ -344,11 +344,11 @@ fn scenario_3_leader_failure() {
         }
         
         if !qc_formed {
-            println!("⚠️  Collected {} votes", vote_count);
+            println!("[WARN] Collected {} votes", vote_count);
         }
     }
     
-    println!("\n✅ Scenario 3 Result: System recovered from leader failure via view change!");
+    println!("\n[OK] Scenario 3 Result: System recovered from leader failure via view change!");
 }
 
 /// Scenario 4: Network Partition
@@ -358,7 +358,7 @@ fn scenario_4_network_partition() {
     println!("{}", "SCENARIO 4: Network Partition".bright_magenta().bold());
     println!("{}", "=".repeat(70).bright_magenta());
     
-    println!("\n📋 Scenario Description:");
+    println!("\nScenario Description:");
     println!("   - Network splits: [R0, R1] vs [R2, R3]");
     println!("   - Each partition has only 2 replicas (< quorum of 3)");
     println!("   - Neither partition can form QC");
@@ -408,7 +408,7 @@ fn scenario_4_network_partition() {
                 };
                 sim.network.send_vote(to as u64, leader_id as u64, vote);
             } else {
-                println!("❌ Message to R{} DROPPED (different partition {})", to, to_partition);
+                println!("[DROP] Message to R{} DROPPED (different partition {})", to, to_partition);
             }
         }
         
@@ -428,14 +428,14 @@ fn scenario_4_network_partition() {
         }
         
         if !qc_formed {
-            println!("\n⚠️  Only {} vote(s) in partition A", vote_count);
+            println!("\n[WARN] Only {} vote(s) in partition A", vote_count);
             println!("   Need 3 votes for quorum, but partition only has 2 replicas");
-            println!("   ❌ Cannot form QC - System HALTED");
-            println!("   ✅ Safety preserved: No conflicting blocks committed");
+            println!("   [FAIL] Cannot form QC - System HALTED");
+            println!("   [OK] Safety preserved: No conflicting blocks committed");
         }
     }
     
-    println!("\n✅ Scenario 4 Result: System correctly halted (safety preserved, liveness violated)");
+    println!("\n[OK] Scenario 4 Result: System correctly halted (safety preserved, liveness violated)");
 }
 
 /// Scenario 5: Byzantine Leader Equivocation
@@ -445,7 +445,7 @@ fn scenario_5_byzantine_leader() {
     println!("{}", "SCENARIO 5: Byzantine Leader Equivocation".bright_red().bold());
     println!("{}", "=".repeat(70).bright_red());
     
-    println!("\n📋 Scenario Description:");
+    println!("\nScenario Description:");
     println!("   - Byzantine leader (R0) proposes TWO different blocks");
     println!("   - Block A to R1, R2");
     println!("   - Block B to R3");
@@ -479,8 +479,8 @@ fn scenario_5_byzantine_leader() {
         qc: None,
     };
     
-    println!("⚠️  Byzantine Leader created Block A (hash: {})", hash_a);
-    println!("⚠️  Byzantine Leader created Block B (hash: {})", hash_b);
+    println!("[WARN] Byzantine Leader created Block A (hash: {})", hash_a);
+    println!("[WARN] Byzantine Leader created Block B (hash: {})", hash_b);
     
     // Send different blocks to different replicas
     println!("\n--- Sending Conflicting Proposals ---");
@@ -515,11 +515,11 @@ fn scenario_5_byzantine_leader() {
     println!("  Vote 1 for Block B received (votes for B: 1)");
     
     if qc_1.is_none() && qc_2.is_none() && qc_3.is_none() {
-        println!("\n❌ No single block has 3 votes!");
+        println!("\n[FAIL] No single block has 3 votes!");
         println!("   Block A: 2 votes (need 3)");
         println!("   Block B: 1 vote (need 3)");
         println!("   QC formation FAILED - Equivocation prevented consensus!");
     }
     
-    println!("\n✅ Scenario 5 Result: System prevented Byzantine leader from breaking consensus!");
+    println!("\n[OK] Scenario 5 Result: System prevented Byzantine leader from breaking consensus!");
 }
