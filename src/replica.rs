@@ -267,6 +267,33 @@ impl Replica {
         self.handle_vote(vote)
     }
 
+    /// Apply a high QC update learned from the network.
+    ///
+    /// Returns true if the local high_qc advanced, false otherwise.
+    pub fn apply_high_qc_from_network(&mut self, qc: QuorumCert) -> bool {
+        let should_update = match &self.high_qc {
+            Some(current) => (qc.epoch, qc.view) > (current.epoch, current.view),
+            None => true,
+        };
+
+        if !should_update {
+            return false;
+        }
+
+        self.high_qc = Some(qc.clone());
+
+        if let Some(ref mut wal) = self.wal {
+            let _ = wal.append(&LogEntry::HighQCUpdated {
+                block_hash: qc.block_hash,
+                view: qc.view,
+                epoch: qc.epoch,
+                timestamp: WAL::now_ms(),
+            });
+        }
+
+        true
+    }
+
     /// Check if this replica is the leader for a given view.
     ///
     /// # Arguments
@@ -634,21 +661,24 @@ impl Replica {
     ///
     /// Increments view, resets timer, and clears view-specific votes.
     pub fn on_view_timeout(&mut self) {
-        let old = self.current_view;
-        self.current_view += 1;
+        self.advance_view_with_reason(ViewChangeReason::Timeout);
+    }
 
-        // ── WAL: log the view change ──
+    /// Advance to the next view and durably record the transition.
+    pub fn advance_view_with_reason(&mut self, reason: ViewChangeReason) {
+        let old = self.current_view;
+        self.current_view = self.current_view.saturating_add(1);
+
         if let Some(ref mut wal) = self.wal {
             let _ = wal.append(&LogEntry::ViewChanged {
                 old_view: old,
                 new_view: self.current_view,
-                reason: ViewChangeReason::Timeout,
+                reason,
                 timestamp: WAL::now_ms(),
             });
         }
 
         self.view_start_time = Self::current_time_ms();
-        // Clear votes from previous view (votes are view-specific)
         self.vote_pool.clear();
     }
 
