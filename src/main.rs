@@ -28,6 +28,8 @@ fn main() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..config.n as u64).collect(),
+        config_epoch: 0,
         keystore: keystores[0].clone(),
         wal: None,
         snapshot_counter: 0,
@@ -38,8 +40,10 @@ fn main() {
         hash: 0,
         parent: None,
         view: 0,
+        epoch: 0,
         proposer: 0,
         qc: None,
+        command: ConsensusCommand::NoOp,
     });
 
     // B1
@@ -47,8 +51,10 @@ fn main() {
         hash: 1,
         parent: Some(0),
         view: 1,
+        epoch: 0,
         proposer: 1,
         qc: Some(dummy_qc(0, 0)),
+        command: ConsensusCommand::NoOp,
     });
 
     // B2
@@ -56,8 +62,10 @@ fn main() {
         hash: 2,
         parent: Some(1),
         view: 2,
+        epoch: 0,
         proposer: 2,
         qc: Some(dummy_qc(1, 1)),
+        command: ConsensusCommand::NoOp,
     });
 
     // B3
@@ -65,8 +73,10 @@ fn main() {
         hash: 3,
         parent: Some(2),
         view: 3,
+        epoch: 0,
         proposer: 3,
         qc: Some(dummy_qc(2, 2)),
+        command: ConsensusCommand::NoOp,
     });
 
     // B4
@@ -74,8 +84,10 @@ fn main() {
         hash: 4,
         parent: Some(3),
         view: 4,
+        epoch: 0,
         proposer: 0,
         qc: Some(dummy_qc(3, 3)),
+        command: ConsensusCommand::NoOp,
     });
 
     replica.high_qc = replica.block_tree.get(&3).unwrap().qc.clone();
@@ -128,6 +140,8 @@ fn main() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..config2.n as u64).collect(),
+        config_epoch: 0,
         keystore: keystores[1].clone(),
         wal: None,
         snapshot_counter: 0,
@@ -138,24 +152,30 @@ fn main() {
         hash: 0,
         parent: None,
         view: 0,
+        epoch: 0,
         proposer: 0,
         qc: None,
+        command: ConsensusCommand::NoOp,
     });
 
     replica2.block_tree.insert(1, Block {
         hash: 1,
         parent: Some(0),
         view: 1,
+        epoch: 0,
         proposer: 1,
         qc: Some(dummy_qc(0, 0)),
+        command: ConsensusCommand::NoOp,
     });
 
     replica2.block_tree.insert(2, Block {
         hash: 2,
         parent: Some(1),
         view: 2,
+        epoch: 0,
         proposer: 2,
         qc: Some(dummy_qc(1, 1)),
+        command: ConsensusCommand::NoOp,
     });
 
     // Replica 2 only has up to B2
@@ -175,6 +195,8 @@ fn main() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..config3.n as u64).collect(),
+        config_epoch: 0,
         keystore: keystores[2].clone(),
         wal: None,
         snapshot_counter: 0,
@@ -185,24 +207,30 @@ fn main() {
         hash: 0,
         parent: None,
         view: 0,
+        epoch: 0,
         proposer: 0,
         qc: None,
+        command: ConsensusCommand::NoOp,
     });
 
     replica3.block_tree.insert(1, Block {
         hash: 1,
         parent: Some(0),
         view: 1,
+        epoch: 0,
         proposer: 1,
         qc: Some(dummy_qc(0, 0)),
+        command: ConsensusCommand::NoOp,
     });
 
     replica3.block_tree.insert(2, Block {
         hash: 2,
         parent: Some(1),
         view: 2,
+        epoch: 0,
         proposer: 2,
         qc: Some(dummy_qc(1, 1)),
+        command: ConsensusCommand::NoOp,
     });
 
     // Fork: different block 5 instead of continuing with 3
@@ -210,8 +238,10 @@ fn main() {
         hash: 5,
         parent: Some(2),
         view: 3,
+        epoch: 0,
         proposer: 3,
         qc: Some(dummy_qc(2, 2)),
+        command: ConsensusCommand::NoOp,
     });
 
     replica3.high_qc = replica3.block_tree.get(&2).unwrap().qc.clone();

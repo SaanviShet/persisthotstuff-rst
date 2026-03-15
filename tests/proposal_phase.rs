@@ -22,6 +22,8 @@ fn leader_proposes_block() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..config.n as u64).collect(),
+        config_epoch: 0,
         keystore: keystores[1].clone(),  // Use the keystore for replica id=1
         wal: None,
         snapshot_counter: 0,
@@ -52,6 +54,8 @@ fn non_leader_cannot_propose() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..config.n as u64).collect(),
+        config_epoch: 0,
         keystore: keystores[0].clone(),  // Use the keystore for replica id=0
         wal: None,
         snapshot_counter: 0,
@@ -78,6 +82,8 @@ fn proposal_validation_accepts_valid() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..leader_cfg.n as u64).collect(),
+        config_epoch: 0,
         keystore: keystores[1].clone(),  // Use the keystore for replica id=1
         wal: None,
         snapshot_counter: 0,
@@ -95,6 +101,8 @@ fn proposal_validation_accepts_valid() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..follower_cfg.n as u64).collect(),
+        config_epoch: 0,
         keystore: keystores[2].clone(),
         wal: None,
         snapshot_counter: 0,
@@ -124,6 +132,8 @@ fn proposal_validation_rejects_invalid_qc() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..leader_cfg.n as u64).collect(),
+        config_epoch: 0,
         keystore: keystores[1].clone(),
         wal: None,
         snapshot_counter: 0,
@@ -141,6 +151,8 @@ fn proposal_validation_rejects_invalid_qc() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..follower_cfg.n as u64).collect(),
+        config_epoch: 0,
         keystore: keystores[2].clone(),
         wal: None,
         snapshot_counter: 0,
@@ -148,7 +160,7 @@ fn proposal_validation_rejects_invalid_qc() {
 
     // Create a block with a QC that has insufficient signatures
     let mut block = leader.propose(1).expect("leader should propose");
-    block.qc = Some(QuorumCert { block_hash: 0, view: 0, signatures: vec![persisthotstuff_rst::crypto::sign(0)] });
+    block.qc = Some(QuorumCert { block_hash: 0, view: 0, epoch: 0, signatures: vec![persisthotstuff_rst::crypto::sign(0)] });
 
     let ok = follower.validate_and_insert_proposal(block);
     assert!(!ok, "proposal with invalid QC should be rejected");

@@ -122,7 +122,7 @@ impl KeyStore {
 
     /// Build the message bytes that are signed/verified for a vote.
     ///
-    /// The message is: SHA-256(block_hash || view), producing a fixed 32-byte digest.
+    /// The message is: SHA-256(block_hash || view || epoch), producing a fixed 32-byte digest.
     ///
     /// # Arguments
     /// * `block_hash` - The hash of the block being voted on
@@ -130,14 +130,15 @@ impl KeyStore {
     ///
     /// # Returns
     /// A 32-byte digest
-    pub fn vote_message(block_hash: u64, view: u64) -> Vec<u8> {
+    pub fn vote_message(block_hash: u64, view: u64, epoch: u64) -> Vec<u8> {
         let mut hasher = Sha256::new();
         hasher.update(block_hash.to_le_bytes());
         hasher.update(view.to_le_bytes());
+        hasher.update(epoch.to_le_bytes());
         hasher.finalize().to_vec()
     }
 
-    /// Sign a vote (block_hash, view) with this replica's private key.
+    /// Sign a vote (block_hash, view, epoch) with this replica's private key.
     ///
     /// # Arguments
     /// * `block_hash` - The block hash being voted on
@@ -145,8 +146,8 @@ impl KeyStore {
     ///
     /// # Returns
     /// A `Signature` containing this replica's ID and Ed25519 signature bytes
-    pub fn sign(&self, block_hash: u64, view: u64) -> Signature {
-        let msg = Self::vote_message(block_hash, view);
+    pub fn sign(&self, block_hash: u64, view: u64, epoch: u64) -> Signature {
+        let msg = Self::vote_message(block_hash, view, epoch);
         let sig = self.my_signing_key.sign(&msg);
         Signature {
             signer: self.my_id,
@@ -163,17 +164,18 @@ impl KeyStore {
     /// * `sig` - The signature to verify
     /// * `block_hash` - The block hash that was supposedly voted on
     /// * `view` - The view number
+    /// * `epoch` - Membership epoch
     ///
     /// # Returns
     /// `true` if the signature is valid for the given (block_hash, view) and the
     /// signer's public key; `false` if the signer is unknown or the signature
     /// does not match.
-    pub fn verify(&self, sig: &Signature, block_hash: u64, view: u64) -> bool {
+    pub fn verify(&self, sig: &Signature, block_hash: u64, view: u64, epoch: u64) -> bool {
         let vk = match self.public_keys.get(&sig.signer) {
             Some(vk) => vk,
             None => return false, // Unknown signer → reject
         };
-        let msg = Self::vote_message(block_hash, view);
+        let msg = Self::vote_message(block_hash, view, epoch);
         let ed_sig = match ed25519_dalek::Signature::from_bytes(&sig.bytes) {
             sig => sig,
         };
@@ -194,11 +196,37 @@ impl KeyStore {
     pub fn verify_qc(&self, qc: &QuorumCert, quorum: usize) -> bool {
         let mut valid_signers: HashSet<ReplicaId> = HashSet::new();
         for sig in &qc.signatures {
-            if self.verify(sig, qc.block_hash, qc.view) {
+            if self.verify(sig, qc.block_hash, qc.view, qc.epoch) {
                 valid_signers.insert(sig.signer);
             }
         }
         valid_signers.len() >= quorum
+    }
+
+    /// Register/replace a validator public key.
+    pub fn add_public_key(&mut self, replica_id: ReplicaId, public_key_bytes: &[u8]) -> bool {
+        if public_key_bytes.len() != 32 {
+            return false;
+        }
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(public_key_bytes);
+        match VerifyingKey::from_bytes(&arr) {
+            Ok(vk) => {
+                self.public_keys.insert(replica_id, vk);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// Remove a validator public key.
+    pub fn remove_public_key(&mut self, replica_id: ReplicaId) {
+        self.public_keys.remove(&replica_id);
+    }
+
+    /// Return this replica's public key bytes.
+    pub fn my_public_key_bytes(&self) -> [u8; 32] {
+        self.my_signing_key.verifying_key().to_bytes()
     }
 }
 

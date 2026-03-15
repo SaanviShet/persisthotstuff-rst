@@ -21,6 +21,8 @@ fn qc_formation_from_votes() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..config.n as u64).collect(),
+        config_epoch: 0,
         keystore: keystores[0].clone(),
         wal: None,
         snapshot_counter: 0,
@@ -34,14 +36,16 @@ fn qc_formation_from_votes() {
         hash: block_hash,
         parent: Some(0),
         view,
+        epoch: 0,
         proposer: 0,
         qc: None,
+        command: ConsensusCommand::NoOp,
     });
 
     // Collect votes from different replicas using their own keystores
     for id in 0..config.quorum_size() {
-        let signature = keystores[id].sign(block_hash, view);
-        let vote = Vote { block_hash, view, signature };
+        let signature = keystores[id].sign(block_hash, view, 0);
+        let vote = Vote { block_hash, view, epoch: 0, signature };
         let qc_opt = replica.handle_vote(vote);
         if let Some(qc) = qc_opt {
             // QC should have at least 2f+1 signatures, and the high QC should be updated to the new QC.

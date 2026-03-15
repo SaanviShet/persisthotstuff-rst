@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};            // cross-platform paths
 use serde::{Serialize, Deserialize};       // (de)serialization derive macros
 use sha2::{Sha256, Digest};               // SHA-256 for snapshot integrity
 
-use crate::types::{Hash, Block, QuorumCert};
+use crate::types::{ConsensusCommand, Hash, Block, QuorumCert};
 use crate::config::ReplicaId;
 
 // ── Error type ───────────────────────────────────────────────────────────
@@ -100,11 +100,13 @@ pub struct SerializableBlock {
     pub hash: Hash,
     pub parent: Option<Hash>,
     pub view: u64,
+    pub epoch: u64,
     pub proposer: ReplicaId,
     /// If the block carried a QC, we store just the certified block_hash.
     pub qc_block_hash: Option<Hash>,
     /// … and the QC's view.
     pub qc_view: Option<u64>,
+    pub command: ConsensusCommand,
 }
 
 /// A snapshot-friendly copy of a `QuorumCert`.
@@ -117,6 +119,7 @@ pub struct SerializableBlock {
 pub struct SerializableQC {
     pub block_hash: Hash,
     pub view: u64,
+    pub epoch: u64,
 }
 
 // ── Snapshot struct ──────────────────────────────────────────────────────
@@ -138,6 +141,12 @@ pub struct Snapshot {
     // ── consensus state ──
     /// The view the replica was in at snapshot time.
     pub current_view: u64,
+
+    /// Membership epoch.
+    pub config_epoch: u64,
+
+    /// Active validator set at snapshot time.
+    pub active_validators: Vec<ReplicaId>,
 
     /// All committed blocks in commit order.
     pub committed_log: Vec<SerializableBlock>,
@@ -167,9 +176,11 @@ impl SerializableBlock {
             hash: b.hash,
             parent: b.parent,
             view: b.view,
+            epoch: b.epoch,
             proposer: b.proposer,
             qc_block_hash: b.qc.as_ref().map(|qc| qc.block_hash),
             qc_view: b.qc.as_ref().map(|qc| qc.view),
+            command: b.command.clone(),
         }
     }
 
@@ -184,6 +195,7 @@ impl SerializableBlock {
             (Some(bh), Some(v)) => Some(QuorumCert {
                 block_hash: bh,
                 view: v,
+                epoch: self.epoch,
                 signatures: vec![],   // signatures not persisted
             }),
             _ => None,
@@ -192,8 +204,10 @@ impl SerializableBlock {
             hash: self.hash,
             parent: self.parent,
             view: self.view,
+            epoch: self.epoch,
             proposer: self.proposer,
             qc,
+            command: self.command.clone(),
         }
     }
 }
@@ -204,6 +218,7 @@ impl SerializableQC {
         SerializableQC {
             block_hash: qc.block_hash,
             view: qc.view,
+            epoch: qc.epoch,
         }
     }
 
@@ -212,6 +227,7 @@ impl SerializableQC {
         QuorumCert {
             block_hash: self.block_hash,
             view: self.view,
+            epoch: self.epoch,
             signatures: vec![],
         }
     }
@@ -228,6 +244,8 @@ impl Snapshot {
         snapshot_id: u64,
         replica_id: ReplicaId,
         current_view: u64,
+        config_epoch: u64,
+        active_validators: &[ReplicaId],
         block_tree: &BTreeMap<Hash, Block>,
         committed_log: &[Block],
         committed_up_to: Option<Hash>,
@@ -239,6 +257,8 @@ impl Snapshot {
             timestamp: crate::wal::WAL::now_ms(),
             replica_id,
             current_view,
+            config_epoch,
+            active_validators: active_validators.to_vec(),
             // Convert every block in the tree to its serialisable form.
             block_tree: block_tree.values()
                 .map(SerializableBlock::from_block)
@@ -437,34 +457,42 @@ mod tests {
             timestamp: 1000 + seq as u128,
             replica_id,
             current_view: 5,
+            config_epoch: 0,
+            active_validators: vec![0, 1, 2, 3],
             committed_log: vec![
                 SerializableBlock {
                     hash: 0,
                     parent: None,
                     view: 0,
+                    epoch: 0,
                     proposer: 0,
                     qc_block_hash: None,
                     qc_view: None,
+                    command: ConsensusCommand::NoOp,
                 },
             ],
             committed_up_to: Some(0),
-            high_qc: Some(SerializableQC { block_hash: 0, view: 0 }),
+            high_qc: Some(SerializableQC { block_hash: 0, view: 0, epoch: 0 }),
             block_tree: vec![
                 SerializableBlock {
                     hash: 0,
                     parent: None,
                     view: 0,
+                    epoch: 0,
                     proposer: 0,
                     qc_block_hash: None,
                     qc_view: None,
+                    command: ConsensusCommand::NoOp,
                 },
                 SerializableBlock {
                     hash: 1,
                     parent: Some(0),
                     view: 1,
+                    epoch: 0,
                     proposer: 1,
                     qc_block_hash: Some(0),
                     qc_view: Some(0),
+                    command: ConsensusCommand::NoOp,
                 },
             ],
             next_hash: 2,
@@ -553,12 +581,15 @@ mod tests {
             hash: 42,
             parent: Some(41),
             view: 7,
+            epoch: 0,
             proposer: 2,
             qc: Some(QuorumCert {
                 block_hash: 41,
                 view: 6,
+                epoch: 0,
                 signatures: vec![],
             }),
+            command: ConsensusCommand::NoOp,
         };
 
         let serializable = SerializableBlock::from_block(&original);

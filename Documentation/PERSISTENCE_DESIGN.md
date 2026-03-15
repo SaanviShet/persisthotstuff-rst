@@ -351,7 +351,7 @@ Each entry follows this **framed** format:
 ├─────────────┬────────────┬──────────────────────────────────┤
 │ Length      │ Checksum   │ Payload (Serialized LogEntry)   │
 │ (4 bytes)   │ (4 bytes)  │ (Length bytes)                   │
-└─────────────┴────────────┴──────────────────────────────────┘
+└─────────────┴────────────┴──────────────────S────────────────┘
 ```
 
 **Frame Design:**

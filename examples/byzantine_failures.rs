@@ -74,7 +74,8 @@ fn scenario_1_byzantine_votes() {
         let leader_vote = Vote {
             block_hash: block.hash,
             view: current_view,
-            signature: sim.replicas[leader_id].keystore.sign(block.hash, current_view),
+            epoch: sim.replicas[leader_id].config_epoch,
+            signature: sim.replicas[leader_id].keystore.sign(block.hash, current_view, sim.replicas[leader_id].config_epoch),
         };
         sim.replicas[leader_id].handle_vote(leader_vote);
         
@@ -103,7 +104,8 @@ fn scenario_1_byzantine_votes() {
                         let invalid_vote_1 = Vote {
                             block_hash: 99999, // Non-existent block hash
                             view: current_view,
-                            signature: sim.replicas[to as usize].keystore.sign(99999, current_view),
+                            epoch: sim.replicas[to as usize].config_epoch,
+                            signature: sim.replicas[to as usize].keystore.sign(99999, current_view, sim.replicas[to as usize].config_epoch),
                         };
                         sim.network.send_vote(to, leader_id as u64, invalid_vote_1);
                         
@@ -120,7 +122,8 @@ fn scenario_1_byzantine_votes() {
                         let vote = Vote {
                             block_hash: block.hash,
                             view: current_view,
-                            signature: sim.replicas[to as usize].keystore.sign(block.hash, current_view),
+                            epoch: sim.replicas[to as usize].config_epoch,
+                            signature: sim.replicas[to as usize].keystore.sign(block.hash, current_view, sim.replicas[to as usize].config_epoch),
                         };
                         sim.network.send_vote(to, leader_id as u64, vote);
                     }
@@ -192,7 +195,8 @@ fn scenario_2_message_delays() {
         let leader_vote = Vote {
             block_hash: block.hash,
             view: current_view,
-            signature: sim.replicas[leader_id].keystore.sign(block.hash, current_view),
+            epoch: sim.replicas[leader_id].config_epoch,
+            signature: sim.replicas[leader_id].keystore.sign(block.hash, current_view, sim.replicas[leader_id].config_epoch),
         };
         sim.replicas[leader_id].handle_vote(leader_vote);
         
@@ -220,7 +224,8 @@ fn scenario_2_message_delays() {
                     let vote = Vote {
                         block_hash: block.hash,
                         view: current_view,
-                        signature: sim.replicas[to as usize].keystore.sign(block.hash, current_view),
+                        epoch: sim.replicas[to as usize].config_epoch,
+                        signature: sim.replicas[to as usize].keystore.sign(block.hash, current_view, sim.replicas[to as usize].config_epoch),
                     };
                     sim.network.send_vote(to, leader_id as u64, vote);
                 }
@@ -298,7 +303,8 @@ fn scenario_3_leader_failure() {
         let leader_vote = Vote {
             block_hash: block.hash,
             view: current_view,
-            signature: sim.replicas[new_leader].keystore.sign(block.hash, current_view),
+            epoch: sim.replicas[new_leader].config_epoch,
+            signature: sim.replicas[new_leader].keystore.sign(block.hash, current_view, sim.replicas[new_leader].config_epoch),
         };
         sim.replicas[new_leader].handle_vote(leader_vote);
         
@@ -319,7 +325,8 @@ fn scenario_3_leader_failure() {
                     let vote = Vote {
                         block_hash: block.hash,
                         view: current_view,
-                        signature: sim.replicas[to as usize].keystore.sign(block.hash, current_view),
+                        epoch: sim.replicas[to as usize].config_epoch,
+                        signature: sim.replicas[to as usize].keystore.sign(block.hash, current_view, sim.replicas[to as usize].config_epoch),
                     };
                     sim.network.send_vote(to, new_leader as u64, vote);
                 }
@@ -382,7 +389,8 @@ fn scenario_4_network_partition() {
         let leader_vote = Vote {
             block_hash: block.hash,
             view: current_view,
-            signature: sim.replicas[leader_id].keystore.sign(block.hash, current_view),
+            epoch: sim.replicas[leader_id].config_epoch,
+            signature: sim.replicas[leader_id].keystore.sign(block.hash, current_view, sim.replicas[leader_id].config_epoch),
         };
         sim.replicas[leader_id].handle_vote(leader_vote);
         
@@ -404,7 +412,8 @@ fn scenario_4_network_partition() {
                 let vote = Vote {
                     block_hash: block.hash,
                     view: current_view,
-                    signature: sim.replicas[to as usize].keystore.sign(block.hash, current_view),
+                    epoch: sim.replicas[to as usize].config_epoch,
+                    signature: sim.replicas[to as usize].keystore.sign(block.hash, current_view, sim.replicas[to as usize].config_epoch),
                 };
                 sim.network.send_vote(to as u64, leader_id as u64, vote);
             } else {
@@ -467,16 +476,20 @@ fn scenario_5_byzantine_leader() {
         hash: hash_a,
         parent: Some(0),
         view: current_view,
+        epoch: sim.replicas[leader_id].config_epoch,
         proposer: leader_id as u64,
         qc: None,
+        command: ConsensusCommand::NoOp,
     };
     
     let block_b = Block {
         hash: hash_b,
         parent: Some(0),
         view: current_view,
+        epoch: sim.replicas[leader_id].config_epoch,
         proposer: leader_id as u64,
         qc: None,
+        command: ConsensusCommand::NoOp,
     };
     
     println!("[WARN] Byzantine Leader created Block A (hash: {})", hash_a);
@@ -493,9 +506,9 @@ fn scenario_5_byzantine_leader() {
     
     // Replicas vote for what they received
     println!("\n--- Replicas Voting ---");
-    let vote_1 = Vote { block_hash: hash_a, view: current_view, signature: sim.replicas[1].keystore.sign(hash_a, current_view) };
-    let vote_2 = Vote { block_hash: hash_a, view: current_view, signature: sim.replicas[2].keystore.sign(hash_a, current_view) };
-    let vote_3 = Vote { block_hash: hash_b, view: current_view, signature: sim.replicas[3].keystore.sign(hash_b, current_view) };
+    let vote_1 = Vote { block_hash: hash_a, view: current_view, epoch: sim.replicas[1].config_epoch, signature: sim.replicas[1].keystore.sign(hash_a, current_view, sim.replicas[1].config_epoch) };
+    let vote_2 = Vote { block_hash: hash_a, view: current_view, epoch: sim.replicas[2].config_epoch, signature: sim.replicas[2].keystore.sign(hash_a, current_view, sim.replicas[2].config_epoch) };
+    let vote_3 = Vote { block_hash: hash_b, view: current_view, epoch: sim.replicas[3].config_epoch, signature: sim.replicas[3].keystore.sign(hash_b, current_view, sim.replicas[3].config_epoch) };
     
     println!("✓ R1 voted for Block A");
     println!("✓ R2 voted for Block A");

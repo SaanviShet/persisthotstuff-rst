@@ -59,6 +59,8 @@ fn main() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: Replica::current_time_ms(),
+        active_validators: (0..config.n as u64).collect(),
+        config_epoch: 0,
         keystore: keystores[0].clone(),
         wal: None,
         snapshot_counter: 0,
@@ -75,8 +77,10 @@ fn main() {
         hash: 0,
         parent: None,
         view: 0,
+        epoch: 0,
         proposer: 0,
         qc: None,
+        command: ConsensusCommand::NoOp,
     };
     replica.block_tree.insert(0, genesis);
     // Log genesis manually (it bypasses validate_and_insert_proposal).
@@ -85,9 +89,11 @@ fn main() {
             hash: 0,
             parent: None,
             view: 0,
+            epoch: 0,
             proposer: 0,
             qc_block_hash: None,
             qc_view: None,
+            command: ConsensusCommand::NoOp,
             timestamp: WAL::now_ms(),
         }).unwrap();
     }
@@ -107,8 +113,10 @@ fn main() {
             hash: *hash,
             parent: *parent,
             view: *view,
+            epoch: 0,
             proposer: *proposer,
             qc,
+            command: ConsensusCommand::NoOp,
         };
 
         // Use validate_and_insert_proposal — this auto-logs to WAL.
@@ -126,6 +134,7 @@ fn main() {
         wal.append(&LogEntry::HighQCUpdated {
             block_hash: 3,
             view: 3,
+            epoch: 0,
             timestamp: WAL::now_ms(),
         }).unwrap();
     }
@@ -174,6 +183,8 @@ fn main() {
         0,                             // snapshot_id
         config.id,
         replica.current_view,
+        replica.config_epoch,
+        &replica.active_validators.iter().copied().collect::<Vec<_>>(),
         &replica.block_tree,
         &replica.committed_log,
         replica.committed_up_to,
@@ -195,8 +206,10 @@ fn main() {
         hash: 5,
         parent: Some(4),
         view: 5,
+        epoch: 0,
         proposer: 1,
         qc: Some(dummy_qc(4, 4)),
+        command: ConsensusCommand::NoOp,
     };
     replica.block_tree.insert(5, post_snap_block.clone());
     if let Some(ref mut wal) = replica.wal {
@@ -295,8 +308,10 @@ fn main() {
         hash: 6,
         parent: Some(5),
         view: 6,
+        epoch: 0,
         proposer: 2,
         qc: Some(dummy_qc(5, 5)),
+        command: ConsensusCommand::NoOp,
     };
     recovered.block_tree.insert(6, block6.clone());
     if let Some(ref mut wal) = recovered.wal {

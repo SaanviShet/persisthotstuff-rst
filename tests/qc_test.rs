@@ -15,6 +15,7 @@ fn quorum_cert_forms_correctly() {
     let qc = QuorumCert {
         block_hash: 42,
         view: 1,
+        epoch: 0,
         signatures: sigs,
     };
 
@@ -24,9 +25,9 @@ fn quorum_cert_forms_correctly() {
 
 #[test]
 fn three_chain_commit_rule() {
-    let b0 = Block { hash: 0, parent: None, view: 0, proposer: 0, qc: None };
-    let b1 = Block { hash: 1, parent: Some(0), view: 1, proposer: 1, qc: Some(dummy_qc(0,0)) };
-    let b2 = Block { hash: 2, parent: Some(1), view: 2, proposer: 2, qc: Some(dummy_qc(1,1)) };
+    let b0 = Block { hash: 0, parent: None, view: 0, epoch: 0, proposer: 0, qc: None, command: ConsensusCommand::NoOp };
+    let b1 = Block { hash: 1, parent: Some(0), view: 1, epoch: 0, proposer: 1, qc: Some(dummy_qc(0,0)), command: ConsensusCommand::NoOp };
+    let b2 = Block { hash: 2, parent: Some(1), view: 2, epoch: 0, proposer: 2, qc: Some(dummy_qc(1,1)), command: ConsensusCommand::NoOp };
 
     // The three-chain commit rule states that if we have a chain of three blocks 
     // (b0 -> b1 -> b2) where each block has a QC certifying its parent, 

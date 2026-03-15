@@ -3,7 +3,7 @@
 //! This module contains the Replica struct which maintains consensus state,
 //! handles proposals and votes, forms QCs, and detects commits using the 3-chain rule.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use crate::types::*;
 use crate::config::*;
 use crate::wal::{WAL, LogEntry, ViewChangeReason};
@@ -32,6 +32,10 @@ pub struct Replica {
     pub committed_up_to: Option<Hash>,
     pub timeout_ms: u64,
     pub view_start_time: u128,
+    /// Current active validator set used for leader election and quorum.
+    pub active_validators: BTreeSet<ReplicaId>,
+    /// Membership configuration epoch.
+    pub config_epoch: u64,
     pub keystore: KeyStore,
     /// Optional WAL handle — `None` means persistence is disabled
     /// (e.g. during unit tests that don't need durability).
@@ -97,6 +101,54 @@ impl Replica {
         print_view_timeline(&self.block_tree, max_view);
     }
 
+    /// Current validator count under active configuration.
+    pub fn dynamic_n(&self) -> usize {
+        self.active_validators.len()
+    }
+
+    /// Current Byzantine fault threshold under active configuration.
+    pub fn dynamic_f(&self) -> usize {
+        if self.dynamic_n() == 0 {
+            return 0;
+        }
+        (self.dynamic_n().saturating_sub(1)) / 3
+    }
+
+    /// Dynamic quorum size 2f+1 for the active validator set.
+    pub fn dynamic_quorum_size(&self) -> usize {
+        2 * self.dynamic_f() + 1
+    }
+
+    /// Dynamic leader selection over sorted active validator IDs.
+    pub fn dynamic_leader_for_view(&self, view: u64) -> ReplicaId {
+        if self.active_validators.is_empty() {
+            return self.config.id;
+        }
+        let idx = (view as usize) % self.active_validators.len();
+        self.active_validators
+            .iter()
+            .nth(idx)
+            .copied()
+            .unwrap_or(self.config.id)
+    }
+
+    /// Set initial validator set from config (0..n-1) if empty.
+    pub fn ensure_default_validators(&mut self) {
+        if !self.active_validators.is_empty() {
+            return;
+        }
+        for id in 0..self.config.n {
+            self.active_validators.insert(id as ReplicaId);
+        }
+    }
+
+    fn can_apply_new_validator_count(&self, new_n: usize) -> bool {
+        if new_n < 4 {
+            return false;
+        }
+        new_n % 3 == 1
+    }
+
     /// Handle an incoming vote from another replica.
     ///
     /// Cryptographically verifies the Ed25519 signature on the vote using the
@@ -109,8 +161,16 @@ impl Replica {
     /// # Returns
     /// Some(QuorumCert) if a QC was formed, None otherwise
     pub fn handle_vote(&mut self, vote: Vote) -> Option<QuorumCert> {
+        if vote.epoch != self.config_epoch {
+            return None;
+        }
+
+        if !self.active_validators.contains(&vote.signature.signer) {
+            return None;
+        }
+
         // Cryptographically verify the Ed25519 signature against the signer's public key
-        if !self.keystore.verify(&vote.signature, vote.block_hash, vote.view) {
+        if !self.keystore.verify(&vote.signature, vote.block_hash, vote.view, vote.epoch) {
             return None;
         }
 
@@ -126,6 +186,12 @@ impl Replica {
             return None;
         }
 
+        if let Some(b) = self.block_tree.get(&vote.block_hash) {
+            if b.epoch != vote.epoch {
+                return None;
+            }
+        }
+
         let entry = self.vote_pool.entry(vote.block_hash).or_insert_with(Vec::new);
 
         // Check for duplicate vote from same signer
@@ -135,7 +201,7 @@ impl Replica {
 
         entry.push(sig);
 
-        self.try_form_qc(vote.block_hash, vote.view)
+        self.try_form_qc(vote.block_hash, vote.view, vote.epoch)
     }
 
     /// Try to form a QC if enough votes have been collected.
@@ -148,10 +214,10 @@ impl Replica {
     ///
     /// # Returns
     /// Some(QuorumCert) if quorum reached, None otherwise
-    fn try_form_qc(&mut self, block_hash: Hash, view: u64) -> Option<QuorumCert> {
+    fn try_form_qc(&mut self, block_hash: Hash, view: u64, epoch: u64) -> Option<QuorumCert> {
         if let Some(sigs) = self.vote_pool.get(&block_hash) {
-            if sigs.len() >= self.config.quorum_size() {
-                let qc = QuorumCert { block_hash, view, signatures: sigs.clone() };
+            if sigs.len() >= self.dynamic_quorum_size() {
+                let qc = QuorumCert { block_hash, view, epoch, signatures: sigs.clone() };
                 self.high_qc = Some(qc.clone());
 
                 // ── WAL: log QC formation + high_qc update ──
@@ -159,12 +225,14 @@ impl Replica {
                     let _ = wal.append(&LogEntry::QCFormed {
                         block_hash,
                         view,
+                        epoch,
                         signer_count: sigs.len(),
                         timestamp: WAL::now_ms(),
                     });
                     let _ = wal.append(&LogEntry::HighQCUpdated {
                         block_hash,
                         view,
+                        epoch,
                         timestamp: WAL::now_ms(),
                     });
                 }
@@ -194,8 +262,8 @@ impl Replica {
             return None;
         }
         
-        let signature = self.keystore.sign(block_hash, view);
-        let vote = Vote { block_hash, view, signature };
+        let signature = self.keystore.sign(block_hash, view, self.config_epoch);
+        let vote = Vote { block_hash, view, epoch: self.config_epoch, signature };
         self.handle_vote(vote)
     }
 
@@ -207,7 +275,7 @@ impl Replica {
     /// # Returns
     /// True if this replica is the leader for the view
     pub fn is_leader(&self, view: u64) -> bool {
-        self.config.leader_for_view(view) == self.config.id
+        self.dynamic_leader_for_view(view) == self.config.id
     }
 
     /// Propose a new block if this replica is the leader.
@@ -230,7 +298,38 @@ impl Replica {
 
         let parent = if let Some(qc) = &self.high_qc { Some(qc.block_hash) } else { self.latest_block_hash() };
 
-        let block = Block { hash, parent, view, proposer: self.config.id, qc: self.high_qc.clone() };
+        let block = Block {
+            hash,
+            parent,
+            view,
+            epoch: self.config_epoch,
+            proposer: self.config.id,
+            qc: self.high_qc.clone(),
+            command: ConsensusCommand::NoOp,
+        };
+        self.block_tree.insert(hash, block.clone());
+        Some(block)
+    }
+
+    /// Propose a command block (client tx or membership reconfiguration).
+    pub fn propose_command(&mut self, view: u64, command: ConsensusCommand) -> Option<Block> {
+        if !self.is_leader(view) {
+            return None;
+        }
+
+        let hash = self.next_hash;
+        self.next_hash = self.next_hash.wrapping_add(1);
+        let parent = if let Some(qc) = &self.high_qc { Some(qc.block_hash) } else { self.latest_block_hash() };
+
+        let block = Block {
+            hash,
+            parent,
+            view,
+            epoch: self.config_epoch,
+            proposer: self.config.id,
+            qc: self.high_qc.clone(),
+            command,
+        };
         self.block_tree.insert(hash, block.clone());
         Some(block)
     }
@@ -257,8 +356,10 @@ impl Replica {
             hash: unique_hash, 
             parent, 
             view, 
+            epoch: self.config_epoch,
             proposer: self.config.id, 
-            qc: self.high_qc.clone() 
+            qc: self.high_qc.clone(),
+            command: ConsensusCommand::NoOp,
         };
         self.block_tree.insert(unique_hash, block.clone());
         Some(block)
@@ -278,8 +379,12 @@ impl Replica {
     /// True if the block is valid and inserted, false otherwise
     pub fn validate_and_insert_proposal(&mut self, block: Block) -> bool {
         // Check proposer is the expected leader for the view
-        let expected = self.config.leader_for_view(block.view);
+        let expected = self.dynamic_leader_for_view(block.view);
         if block.proposer != expected {
+            return false;
+        }
+
+        if block.epoch != self.config_epoch {
             return false;
         }
 
@@ -293,7 +398,10 @@ impl Replica {
 
         // If the block carries a QC, validate it cryptographically
         if let Some(ref qc) = block.qc {
-            if !self.keystore.verify_qc(qc, self.config.quorum_size()) {
+            if qc.epoch != self.config_epoch {
+                return false;
+            }
+            if !self.keystore.verify_qc(qc, self.dynamic_quorum_size()) {
                 return false;
             }
             // ensure QC's block exists in our tree (sanity check)
@@ -394,8 +502,76 @@ impl Replica {
 
         self.committed_log.push(block.clone());
         self.committed_up_to = Some(block.hash);
+
+        // Apply membership reconfiguration atomically at commit time.
+        self.apply_membership_command(&block.command);
+
         // view change on commit
         self.on_commit();
+    }
+
+    fn apply_membership_command(&mut self, command: &ConsensusCommand) {
+        match command {
+            ConsensusCommand::JoinValidator { replica_id, public_key } => {
+                if self.active_validators.contains(replica_id) {
+                    return;
+                }
+
+                let new_n = self.active_validators.len() + 1;
+                if !self.can_apply_new_validator_count(new_n) {
+                    return;
+                }
+
+                if !self.keystore.add_public_key(*replica_id, public_key) {
+                    return;
+                }
+
+                self.active_validators.insert(*replica_id);
+                self.config_epoch = self.config_epoch.saturating_add(1);
+                self.config.n = self.active_validators.len();
+                self.config.f = self.dynamic_f();
+                self.vote_pool.clear();
+            }
+            ConsensusCommand::RemoveValidator { replica_id } => {
+                if !self.active_validators.contains(replica_id) {
+                    return;
+                }
+
+                let new_n = self.active_validators.len().saturating_sub(1);
+                if !self.can_apply_new_validator_count(new_n) {
+                    return;
+                }
+
+                self.active_validators.remove(replica_id);
+                self.keystore.remove_public_key(*replica_id);
+                self.config_epoch = self.config_epoch.saturating_add(1);
+                self.config.n = self.active_validators.len();
+                self.config.f = self.dynamic_f();
+                self.vote_pool.clear();
+            }
+            _ => {}
+        }
+    }
+
+    /// Leader helper: propose joining a validator.
+    pub fn propose_join_validator(
+        &mut self,
+        view: u64,
+        replica_id: ReplicaId,
+        public_key: Vec<u8>,
+    ) -> Option<Block> {
+        self.propose_command(
+            view,
+            ConsensusCommand::JoinValidator {
+                replica_id,
+                public_key,
+            },
+        )
+    }
+
+    /// Leader helper: propose removing a validator.
+    pub fn propose_remove_validator(&mut self, view: u64, replica_id: ReplicaId) -> Option<Block> {
+        self.propose_command(view, ConsensusCommand::RemoveValidator { replica_id })
     }
 
     /// Attempt to commit one block using the 3-chain rule.
@@ -495,7 +671,7 @@ impl Replica {
     /// # Returns
     /// The replica ID of the current leader
     pub fn current_leader(&self) -> ReplicaId {
-        self.config.leader_for_view(self.current_view)
+        self.dynamic_leader_for_view(self.current_view)
     }
 
     /// Check if this replica is the leader for the current view.
@@ -503,7 +679,7 @@ impl Replica {
     /// # Returns
     /// True if this replica is the current leader, false otherwise
     pub fn am_i_leader(&self) -> bool {
-        self.config.leader_for_view(self.current_view) == self.config.id
+        self.dynamic_leader_for_view(self.current_view) == self.config.id
     }
 
     // ===== Persistence & Snapshot Methods =====
@@ -511,6 +687,116 @@ impl Replica {
     /// Attach a WAL handle to this replica so future mutations are logged.
     pub fn attach_wal(&mut self, wal: WAL) {
         self.wal = Some(wal);
+    }
+
+    /// Export state for join catch-up (latest snapshot + WAL tail).
+    pub fn export_catchup_state(
+        &self,
+        data_dir: &Path,
+    ) -> Result<(Option<Snapshot>, Vec<LogEntry>), String> {
+        let latest_snapshot = match Snapshot::load_latest(self.config.id, data_dir) {
+            Ok(s) => Some(s),
+            Err(crate::snapshot::SnapshotError::NotFound) => None,
+            Err(e) => return Err(format!("snapshot load error: {}", e)),
+        };
+
+        let wal_entries = if WAL::exists(self.config.id, data_dir) {
+            let mut wal = WAL::open(self.config.id, data_dir).map_err(|e| format!("wal open error: {}", e))?;
+            wal.read_all().map_err(|e| format!("wal read error: {}", e))?
+        } else {
+            Vec::new()
+        };
+
+        Ok((latest_snapshot, wal_entries))
+    }
+
+    /// Import catch-up state for a newly joined validator.
+    pub fn import_catchup_state(
+        &mut self,
+        snapshot: Option<Snapshot>,
+        wal_entries: &[LogEntry],
+    ) -> Result<(), String> {
+        if let Some(snap) = snapshot {
+            self.current_view = snap.current_view;
+            self.block_tree = snap
+                .block_tree
+                .iter()
+                .map(|b| (b.hash, b.to_block()))
+                .collect();
+            self.committed_log = snap.committed_log.iter().map(|b| b.to_block()).collect();
+            self.committed_up_to = snap.committed_up_to;
+            self.high_qc = snap.high_qc.map(|q| q.to_qc());
+            self.next_hash = snap.next_hash;
+        }
+
+        for entry in wal_entries {
+            match entry {
+                LogEntry::BlockInserted {
+                    hash,
+                    parent,
+                    view,
+                    proposer,
+                    qc_block_hash,
+                    qc_view,
+                    ..
+                } => {
+                    let qc = match (qc_block_hash, qc_view) {
+                        (Some(bh), Some(v)) => Some(QuorumCert {
+                            block_hash: *bh,
+                            view: *v,
+                            epoch: self.config_epoch,
+                            signatures: vec![],
+                        }),
+                        _ => None,
+                    };
+                    self.block_tree.insert(
+                        *hash,
+                        Block {
+                            hash: *hash,
+                            parent: *parent,
+                            view: *view,
+                            epoch: self.config_epoch,
+                            proposer: *proposer,
+                            qc,
+                            command: ConsensusCommand::NoOp,
+                        },
+                    );
+                }
+                LogEntry::BlockCommitted {
+                    hash,
+                    parent,
+                    view,
+                    proposer,
+                    ..
+                } => {
+                    let b = Block {
+                        hash: *hash,
+                        parent: *parent,
+                        view: *view,
+                        epoch: self.config_epoch,
+                        proposer: *proposer,
+                        qc: None,
+                        command: ConsensusCommand::NoOp,
+                    };
+                    self.committed_log.push(b.clone());
+                    self.committed_up_to = Some(b.hash);
+                }
+                LogEntry::HighQCUpdated { block_hash, view, .. } => {
+                    self.high_qc = Some(QuorumCert {
+                        block_hash: *block_hash,
+                        view: *view,
+                        epoch: self.config_epoch,
+                        signatures: vec![],
+                    });
+                }
+                LogEntry::ViewChanged { new_view, .. } => {
+                    self.current_view = *new_view;
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
     }
 
     /// Check whether a snapshot should be taken now.
@@ -534,6 +820,8 @@ impl Replica {
             self.snapshot_counter,
             self.config.id,
             self.current_view,
+            self.config_epoch,
+            &self.active_validators.iter().copied().collect::<Vec<_>>(),
             &self.block_tree,
             &self.committed_log,
             self.committed_up_to,

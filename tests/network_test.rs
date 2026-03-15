@@ -17,6 +17,7 @@ fn test_send_receive() {
     let vote = Vote {
         block_hash: 1,
         view: 1,
+        epoch: 0,
         signature: sign(0),
     };
     
@@ -36,8 +37,10 @@ fn test_broadcast_proposal() {
         hash: 1,
         parent: Some(0),
         view: 1,
+        epoch: 0,
         proposer: 0,
         qc: None,
+        command: ConsensusCommand::NoOp,
     };
     
     network.broadcast_proposal(0, block);

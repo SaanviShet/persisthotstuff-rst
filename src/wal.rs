@@ -20,7 +20,7 @@ use std::io::{self, Read, Write, Seek, SeekFrom, BufWriter, BufReader};
                                             // Standard I/O traits + buffered wrappers
 use std::path::{Path, PathBuf};            // Cross-platform path handling
 use serde::{Serialize, Deserialize};       // Derive-able (de)serialization traits
-use crate::types::{Hash, Block, QuorumCert, Vote};
+use crate::types::{ConsensusCommand, Hash, Block, QuorumCert, Vote};
                                             // Re-use existing domain types
 use crate::config::ReplicaId;              // Type alias for u64 replica IDs
 
@@ -129,9 +129,11 @@ pub enum LogEntry {
         hash: Hash,                    // block's unique ID
         parent: Option<Hash>,         // hash of parent block (None for genesis)
         view: u64,                     // view in which it was proposed
+        epoch: u64,                    // membership epoch of proposal
         proposer: ReplicaId,           // who proposed it
         qc_block_hash: Option<Hash>,   // QC piggybacked on the block (if any)
         qc_view: Option<u64>,         // view of that QC
+        command: ConsensusCommand,
         timestamp: u128,
     },
 
@@ -147,6 +149,7 @@ pub enum LogEntry {
     QCFormed {
         block_hash: Hash,
         view: u64,
+        epoch: u64,
         signer_count: usize,          // how many unique signers
         timestamp: u128,
     },
@@ -155,6 +158,7 @@ pub enum LogEntry {
     HighQCUpdated {
         block_hash: Hash,
         view: u64,
+        epoch: u64,
         timestamp: u128,
     },
 
@@ -163,7 +167,9 @@ pub enum LogEntry {
         hash: Hash,
         parent: Option<Hash>,
         view: u64,
+        epoch: u64,
         proposer: ReplicaId,
+        command: ConsensusCommand,
         commit_index: usize,          // position in committed_log
         timestamp: u128,
     },
@@ -529,9 +535,11 @@ impl LogEntry {
             hash: block.hash,
             parent: block.parent,
             view: block.view,
+            epoch: block.epoch,
             proposer: block.proposer,
             qc_block_hash: block.qc.as_ref().map(|qc| qc.block_hash),
             qc_view: block.qc.as_ref().map(|qc| qc.view),
+            command: block.command.clone(),
             timestamp: WAL::now_ms(),
         }
     }
@@ -543,7 +551,9 @@ impl LogEntry {
             hash: block.hash,
             parent: block.parent,
             view: block.view,
+            epoch: block.epoch,
             proposer: block.proposer,
+            command: block.command.clone(),
             commit_index,
             timestamp: WAL::now_ms(),
         }
@@ -594,7 +604,9 @@ mod tests {
             hash: 42,
             parent: Some(0),
             view: 1,
+            epoch: 0,
             proposer: 0,
+            command: ConsensusCommand::NoOp,
             commit_index: 0,
             timestamp: 200,
         };

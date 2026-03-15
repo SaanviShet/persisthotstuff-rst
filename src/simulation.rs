@@ -59,6 +59,8 @@ impl Simulation {
                 committed_up_to: None,
                 timeout_ms: 5000,
                 view_start_time: Replica::current_time_ms(),
+                active_validators: (0..n as u64).collect(),
+                config_epoch: 0,
                 keystore: keystores[id].clone(),
                 wal: None,
                 snapshot_counter: 0,
@@ -69,8 +71,10 @@ impl Simulation {
                 hash: 0,
                 parent: None,
                 view: 0,
+                epoch: 0,
                 proposer: 0,
                 qc: None,
+                command: ConsensusCommand::NoOp,
             });
             
             replicas.push(replica);
@@ -165,10 +169,11 @@ impl Simulation {
                     }
                     
                     // Create and send vote with Ed25519 signature using replica's own keystore
-                    let signature = replica.keystore.sign(block.hash, block.view);
+                    let signature = replica.keystore.sign(block.hash, block.view, block.epoch);
                     let vote = Vote {
                         block_hash: block.hash,
                         view: block.view,
+                        epoch: block.epoch,
                         signature,
                     };
                     

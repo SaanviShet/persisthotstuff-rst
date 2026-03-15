@@ -22,6 +22,8 @@ fn three_chain_commits_block() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..config.n as u64).collect(),
+        config_epoch: 0,
         keystore: keystores[0].clone(),
         wal: None,
         snapshot_counter: 0,
@@ -32,8 +34,10 @@ fn three_chain_commits_block() {
         hash: 0,
         parent: None,
         view: 0,
+        epoch: 0,
         proposer: 0,
         qc: None,
+        command: ConsensusCommand::NoOp,
     };
     replica.block_tree.insert(b0.hash, b0.clone());
 
@@ -42,16 +46,19 @@ fn three_chain_commits_block() {
         hash: 1,
         parent: Some(0),
         view: 1,
+        epoch: 0,
         proposer: 1,
         qc: Some(QuorumCert {
             block_hash: 0,
             view: 0,
+            epoch: 0,
             signatures: vec![
                 persisthotstuff_rst::crypto::sign(0),
                 persisthotstuff_rst::crypto::sign(1),
                 persisthotstuff_rst::crypto::sign(2),
             ],
         }),
+        command: ConsensusCommand::NoOp,
     };
     replica.block_tree.insert(b1.hash, b1.clone());
 
@@ -60,16 +67,19 @@ fn three_chain_commits_block() {
         hash: 2,
         parent: Some(1),
         view: 2,
+        epoch: 0,
         proposer: 2,
         qc: Some(QuorumCert {
             block_hash: 1,
             view: 1,
+            epoch: 0,
             signatures: vec![
                 persisthotstuff_rst::crypto::sign(0),
                 persisthotstuff_rst::crypto::sign(1),
                 persisthotstuff_rst::crypto::sign(2),
             ],
         }),
+        command: ConsensusCommand::NoOp,
     };
     replica.block_tree.insert(b2.hash, b2.clone());
 
@@ -97,6 +107,8 @@ fn insufficient_qc_blocks_dont_commit() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..config.n as u64).collect(),
+        config_epoch: 0,
         keystore: keystores[0].clone(),
         wal: None,
         snapshot_counter: 0,
@@ -107,8 +119,10 @@ fn insufficient_qc_blocks_dont_commit() {
         hash: 0,
         parent: None,
         view: 0,
+        epoch: 0,
         proposer: 0,
         qc: None,
+        command: ConsensusCommand::NoOp,
     };
     replica.block_tree.insert(b0.hash, b0.clone());
 
@@ -117,8 +131,10 @@ fn insufficient_qc_blocks_dont_commit() {
         hash: 1,
         parent: Some(0),
         view: 1,
+        epoch: 0,
         proposer: 1,
         qc: None,
+        command: ConsensusCommand::NoOp,
     };
     replica.block_tree.insert(b1.hash, b1.clone());
 
@@ -127,8 +143,10 @@ fn insufficient_qc_blocks_dont_commit() {
         hash: 2,
         parent: Some(1),
         view: 2,
+        epoch: 0,
         proposer: 2,
         qc: None,
+        command: ConsensusCommand::NoOp,
     };
     replica.block_tree.insert(b2.hash, b2.clone());
 
@@ -158,6 +176,8 @@ fn commit_log_grows_correctly() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..config.n as u64).collect(),
+        config_epoch: 0,
         keystore: keystores[0].clone(),
         wal: None,
         snapshot_counter: 0,
@@ -168,8 +188,10 @@ fn commit_log_grows_correctly() {
         hash: 0,
         parent: None,
         view: 0,
+        epoch: 0,
         proposer: 0,
         qc: None,
+        command: ConsensusCommand::NoOp,
     };
     replica.block_tree.insert(b0.hash, b0);
 
@@ -178,16 +200,19 @@ fn commit_log_grows_correctly() {
         hash: 1,
         parent: Some(0),
         view: 1,
+        epoch: 0,
         proposer: 1,
         qc: Some(QuorumCert {
             block_hash: 0,
             view: 0,
+            epoch: 0,
             signatures: vec![
                 persisthotstuff_rst::crypto::sign(0),
                 persisthotstuff_rst::crypto::sign(1),
                 persisthotstuff_rst::crypto::sign(2),
             ],
         }),
+        command: ConsensusCommand::NoOp,
     };
     replica.block_tree.insert(b1.hash, b1);
 
@@ -196,16 +221,19 @@ fn commit_log_grows_correctly() {
         hash: 2,
         parent: Some(1),
         view: 2,
+        epoch: 0,
         proposer: 2,
         qc: Some(QuorumCert {
             block_hash: 1,
             view: 1,
+            epoch: 0,
             signatures: vec![
                 persisthotstuff_rst::crypto::sign(0),
                 persisthotstuff_rst::crypto::sign(1),
                 persisthotstuff_rst::crypto::sign(2),
             ],
         }),
+        command: ConsensusCommand::NoOp,
     };
     replica.block_tree.insert(b2.hash, b2);
 
@@ -214,16 +242,19 @@ fn commit_log_grows_correctly() {
         hash: 3,
         parent: Some(2),
         view: 3,
+        epoch: 0,
         proposer: 3,
         qc: Some(QuorumCert {
             block_hash: 2,
             view: 2,
+            epoch: 0,
             signatures: vec![
                 persisthotstuff_rst::crypto::sign(0),
                 persisthotstuff_rst::crypto::sign(1),
                 persisthotstuff_rst::crypto::sign(2),
             ],
         }),
+        command: ConsensusCommand::NoOp,
     };
     replica.block_tree.insert(b3.hash, b3);
 
@@ -232,16 +263,19 @@ fn commit_log_grows_correctly() {
         hash: 4,
         parent: Some(3),
         view: 4,
+        epoch: 0,
         proposer: 0,
         qc: Some(QuorumCert {
             block_hash: 3,
             view: 3,
+            epoch: 0,
             signatures: vec![
                 persisthotstuff_rst::crypto::sign(0),
                 persisthotstuff_rst::crypto::sign(1),
                 persisthotstuff_rst::crypto::sign(2),
             ],
         }),
+        command: ConsensusCommand::NoOp,
     };
     replica.block_tree.insert(b4.hash, b4);
 
@@ -278,6 +312,8 @@ fn cannot_commit_same_block_twice() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..config.n as u64).collect(),
+        config_epoch: 0,
         keystore: keystores[0].clone(),
         wal: None,
         snapshot_counter: 0,
@@ -288,8 +324,10 @@ fn cannot_commit_same_block_twice() {
         hash: 0,
         parent: None,
         view: 0,
+        epoch: 0,
         proposer: 0,
         qc: None,
+        command: ConsensusCommand::NoOp,
     };
     replica.block_tree.insert(b0.hash, b0.clone());
 
@@ -298,16 +336,19 @@ fn cannot_commit_same_block_twice() {
         hash: 1,
         parent: Some(0),
         view: 1,
+        epoch: 0,
         proposer: 1,
         qc: Some(QuorumCert {
             block_hash: 0,
             view: 0,
+            epoch: 0,
             signatures: vec![
                 persisthotstuff_rst::crypto::sign(0),
                 persisthotstuff_rst::crypto::sign(1),
                 persisthotstuff_rst::crypto::sign(2),
             ],
         }),
+        command: ConsensusCommand::NoOp,
     };
     replica.block_tree.insert(b1.hash, b1.clone());
 
@@ -316,16 +357,19 @@ fn cannot_commit_same_block_twice() {
         hash: 2,
         parent: Some(1),
         view: 2,
+        epoch: 0,
         proposer: 2,
         qc: Some(QuorumCert {
             block_hash: 1,
             view: 1,
+            epoch: 0,
             signatures: vec![
                 persisthotstuff_rst::crypto::sign(0),
                 persisthotstuff_rst::crypto::sign(1),
                 persisthotstuff_rst::crypto::sign(2),
             ],
         }),
+        command: ConsensusCommand::NoOp,
     };
     replica.block_tree.insert(b2.hash, b2.clone());
 

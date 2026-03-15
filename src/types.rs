@@ -4,8 +4,27 @@
 //! Block, QuorumCert (QC), and Vote.
 
 use crate::config::ReplicaId;
+use serde::{Deserialize, Serialize};
 
 pub type Hash = u64;
+
+/// Command payload carried by a block.
+///
+/// Membership changes are represented as normal consensus commands and
+/// are applied atomically only when the enclosing block is committed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConsensusCommand {
+    NoOp,
+    ClientTx(String),
+    JoinValidator {
+        replica_id: ReplicaId,
+        /// Ed25519 public key bytes (32 bytes)
+        public_key: Vec<u8>,
+    },
+    RemoveValidator {
+        replica_id: ReplicaId,
+    },
+}
 
 /// Block structure for the consensus protocol.
 ///
@@ -20,8 +39,11 @@ pub struct Block {
     pub hash: Hash,
     pub parent: Option<Hash>,
     pub view: u64,
+    /// Membership epoch under which this block was proposed.
+    pub epoch: u64,
     pub proposer: ReplicaId,
     pub qc: Option<QuorumCert>,
+    pub command: ConsensusCommand,
 }
 
 use crate::crypto::Signature;
@@ -37,6 +59,8 @@ use crate::crypto::Signature;
 pub struct QuorumCert {
     pub block_hash: u64,
     pub view: u64,
+    /// Membership epoch under which signatures were collected.
+    pub epoch: u64,
     pub signatures: Vec<Signature>,
 }
 
@@ -51,6 +75,8 @@ pub struct QuorumCert {
 pub struct Vote {
     pub block_hash: u64,
     pub view: u64,
+    /// Membership epoch under which the vote was created.
+    pub epoch: u64,
     pub signature: Signature,
 }
 
@@ -66,6 +92,7 @@ pub fn dummy_qc(hash: u64, view: u64) -> QuorumCert {
     QuorumCert {
         block_hash: hash,
         view,
+        epoch: 0,
         signatures: vec![],
     }
 }

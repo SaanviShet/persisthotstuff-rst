@@ -15,7 +15,7 @@
 
 // ── Imports ──────────────────────────────────────────────────────────────
 
-use std::collections::BTreeMap;        // ordered map for block_tree
+use std::collections::{BTreeMap, BTreeSet};        // ordered map for block_tree
 use std::path::Path;                   // filesystem paths
 
 use crate::config::{Config, ReplicaId};
@@ -103,6 +103,8 @@ pub fn recover(
         mut high_qc,
         mut current_view,
         mut next_hash,
+        mut config_epoch,
+        mut active_validators,
     ) = match Snapshot::load_latest(replica_id, data_dir) {
         Ok(snap) => {
             println!("Loaded snapshot #{} for replica {} (view {}, {} committed blocks)",
@@ -121,12 +123,25 @@ pub fn recover(
             let hqc: Option<QuorumCert> = snap.high_qc
                 .map(|sqc| sqc.to_qc());
 
-            (tree, clog, snap.committed_up_to, hqc, snap.current_view, snap.next_hash)
+            (
+                tree,
+                clog,
+                snap.committed_up_to,
+                hqc,
+                snap.current_view,
+                snap.next_hash,
+                snap.config_epoch,
+                snap.active_validators.into_iter().collect::<BTreeSet<_>>(),
+            )
         }
         Err(SnapshotError::NotFound) => {
             // First boot — no snapshot on disk yet.
             println!("No snapshot found for replica {}, starting fresh", replica_id);
-            (BTreeMap::new(), Vec::new(), None, None, 0u64, 1u64)
+            let mut validators = BTreeSet::new();
+            for id in 0..config.n {
+                validators.insert(id as ReplicaId);
+            }
+            (BTreeMap::new(), Vec::new(), None, None, 0u64, 1u64, 0u64, validators)
         }
         Err(e) => {
             // Snapshot exists but is corrupt or unreadable.
@@ -152,6 +167,7 @@ pub fn recover(
                 &mut high_qc,
                 &mut current_view,
                 &mut next_hash,
+                &mut config_epoch,
             )?;
 
             // Progress indicator every 1 000 entries.
@@ -178,8 +194,10 @@ pub fn recover(
             hash: 0,
             parent: None,
             view: 0,
+            epoch: 0,
             proposer: 0,
             qc: None,
+            command: crate::types::ConsensusCommand::NoOp,
         };
         block_tree.insert(0, genesis);
     }
@@ -197,6 +215,8 @@ pub fn recover(
         // Pacemaker resets: we just booted, so the timer starts now.
         timeout_ms: config.timeout_ms,
         view_start_time: Replica::current_time_ms(),
+        active_validators,
+        config_epoch,
         keystore,
         wal: None,
         snapshot_counter: 0,
@@ -226,11 +246,12 @@ fn replay_entry(
     high_qc: &mut Option<QuorumCert>,
     current_view: &mut u64,
     next_hash: &mut Hash,
+    config_epoch: &mut u64,
 ) -> Result<(), RecoveryError> {
     match entry {
         // ── A block was inserted into the tree ──
         LogEntry::BlockInserted {
-            hash, parent, view, proposer,
+            hash, parent, view, epoch, proposer,
             qc_block_hash, qc_view, ..
         } => {
             // Reconstruct the QC stub (no signatures — they were not logged).
@@ -238,6 +259,7 @@ fn replay_entry(
                 (Some(bh), Some(v)) => Some(QuorumCert {
                     block_hash: *bh,
                     view: *v,
+                    epoch: *epoch,
                     signatures: vec![],
                 }),
                 _ => None,
@@ -247,8 +269,10 @@ fn replay_entry(
                 hash: *hash,
                 parent: *parent,
                 view: *view,
+                epoch: *epoch,
                 proposer: *proposer,
                 qc,
+                command: crate::types::ConsensusCommand::NoOp,
             };
             block_tree.insert(*hash, block);
 
@@ -265,7 +289,7 @@ fn replay_entry(
         }
 
         // ── QC formed ──
-        LogEntry::QCFormed { block_hash, view, .. } => {
+        LogEntry::QCFormed { block_hash, view, epoch, .. } => {
             // Update high_qc if this QC is newer.
             let dominated = match high_qc {
                 Some(ref hq) => *view > hq.view,
@@ -275,23 +299,27 @@ fn replay_entry(
                 *high_qc = Some(QuorumCert {
                     block_hash: *block_hash,
                     view: *view,
+                    epoch: *epoch,
                     signatures: vec![],
                 });
             }
+            *config_epoch = (*config_epoch).max(*epoch);
         }
 
         // ── High QC pointer updated ──
-        LogEntry::HighQCUpdated { block_hash, view, .. } => {
+        LogEntry::HighQCUpdated { block_hash, view, epoch, .. } => {
             *high_qc = Some(QuorumCert {
                 block_hash: *block_hash,
                 view: *view,
+                epoch: *epoch,
                 signatures: vec![],
             });
+            *config_epoch = (*config_epoch).max(*epoch);
         }
 
         // ── Block committed (3-chain satisfied) ──
         LogEntry::BlockCommitted {
-            hash, parent, view, proposer,
+            hash, parent, view, epoch, proposer,
             commit_index, ..
         } => {
             // Safety check: commits must be replayed in order.
@@ -306,11 +334,14 @@ fn replay_entry(
                 hash: *hash,
                 parent: *parent,
                 view: *view,
+                epoch: *epoch,
                 proposer: *proposer,
                 qc: None,  // QC not stored separately for commits
+                command: crate::types::ConsensusCommand::NoOp,
             };
             committed_log.push(block);
             *committed_up_to = Some(*hash);
+            *config_epoch = (*config_epoch).max(*epoch);
         }
 
         // ── View changed ──
@@ -379,9 +410,11 @@ mod tests {
                 hash: 1,
                 parent: Some(0),
                 view: 1,
+                epoch: 0,
                 proposer: 0,
                 qc_block_hash: None,
                 qc_view: None,
+                command: crate::types::ConsensusCommand::NoOp,
                 timestamp: 100,
             }).unwrap();
 
@@ -412,13 +445,16 @@ mod tests {
             timestamp: 1000,
             replica_id: 0,
             current_view: 3,
+            config_epoch: 0,
+            active_validators: vec![0, 1, 2, 3],
             committed_log: vec![],
             committed_up_to: None,
             high_qc: None,
             block_tree: vec![
                 crate::snapshot::SerializableBlock {
-                    hash: 0, parent: None, view: 0, proposer: 0,
+                    hash: 0, parent: None, view: 0, epoch: 0, proposer: 0,
                     qc_block_hash: None, qc_view: None,
+                    command: crate::types::ConsensusCommand::NoOp,
                 },
             ],
             next_hash: 1,
@@ -456,7 +492,9 @@ mod tests {
                 hash: 1,
                 parent: Some(0),
                 view: 1,
+                epoch: 0,
                 proposer: 0,
+                command: crate::types::ConsensusCommand::NoOp,
                 commit_index: 5,
                 timestamp: 100,
             }).unwrap();
