@@ -1,11 +1,15 @@
 use persisthotstuff_rst::config::Config;
 use persisthotstuff_rst::replica::Replica;
 use persisthotstuff_rst::types::*;
+use persisthotstuff_rst::crypto::KeyStore;
 use std::collections::BTreeMap;
 
 #[test]
 fn leader_proposes_block() {
     let config = Config { n: 4, f: 1, id: 1 , timeout_ms: 5000};
+
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
 
     let mut replica = Replica {
         config: config.clone(),
@@ -18,6 +22,11 @@ fn leader_proposes_block() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..config.n as u64).collect(),
+        config_epoch: 0,
+        keystore: keystores[1].clone(),  // Use the keystore for replica id=1
+        wal: None,
+        snapshot_counter: 0,
     };
 
     let block_opt = replica.propose(1);
@@ -31,6 +40,9 @@ fn leader_proposes_block() {
 fn non_leader_cannot_propose() {
     let config = Config { n: 4, f: 1, id: 0, timeout_ms: 5000 };
 
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
+
     let mut replica = Replica {
         config: config.clone(),
         current_view: 1,
@@ -42,6 +54,11 @@ fn non_leader_cannot_propose() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..config.n as u64).collect(),
+        config_epoch: 0,
+        keystore: keystores[0].clone(),  // Use the keystore for replica id=0
+        wal: None,
+        snapshot_counter: 0,
     };
 
     assert!(replica.propose(1).is_none());
@@ -50,6 +67,10 @@ fn non_leader_cannot_propose() {
 #[test]
 fn proposal_validation_accepts_valid() {
     let leader_cfg = Config { n: 4, f: 1, id: 1, timeout_ms: 5000 };
+    
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
+
     let mut leader = Replica {
         config: leader_cfg.clone(),
         current_view: 1,
@@ -61,6 +82,11 @@ fn proposal_validation_accepts_valid() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..leader_cfg.n as u64).collect(),
+        config_epoch: 0,
+        keystore: keystores[1].clone(),  // Use the keystore for replica id=1
+        wal: None,
+        snapshot_counter: 0,
     };
 
     let follower_cfg = Config { n: 4, f: 1, id: 2, timeout_ms: 5000 };
@@ -75,6 +101,11 @@ fn proposal_validation_accepts_valid() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..follower_cfg.n as u64).collect(),
+        config_epoch: 0,
+        keystore: keystores[2].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     let block = leader.propose(1).expect("leader should propose");
@@ -86,6 +117,10 @@ fn proposal_validation_accepts_valid() {
 #[test]
 fn proposal_validation_rejects_invalid_qc() {
     let leader_cfg = Config { n: 4, f: 1, id: 1, timeout_ms: 5000 };
+
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
+    
     let mut leader = Replica {
         config: leader_cfg.clone(),
         current_view: 1,
@@ -97,6 +132,11 @@ fn proposal_validation_rejects_invalid_qc() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..leader_cfg.n as u64).collect(),
+        config_epoch: 0,
+        keystore: keystores[1].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     let follower_cfg = Config { n: 4, f: 1, id: 2, timeout_ms: 5000 };
@@ -111,11 +151,16 @@ fn proposal_validation_rejects_invalid_qc() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,
+        active_validators: (0..follower_cfg.n as u64).collect(),
+        config_epoch: 0,
+        keystore: keystores[2].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     // Create a block with a QC that has insufficient signatures
     let mut block = leader.propose(1).expect("leader should propose");
-    block.qc = Some(QuorumCert { block_hash: 0, view: 0, signatures: vec![persisthotstuff_rst::crypto::sign(0)] });
+    block.qc = Some(QuorumCert { block_hash: 0, view: 0, epoch: 0, signatures: vec![persisthotstuff_rst::crypto::sign(0)] });
 
     let ok = follower.validate_and_insert_proposal(block);
     assert!(!ok, "proposal with invalid QC should be rejected");

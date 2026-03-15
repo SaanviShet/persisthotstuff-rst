@@ -1,11 +1,15 @@
 use persisthotstuff_rst::config::Config;
 use persisthotstuff_rst::replica::Replica;
 use persisthotstuff_rst::types::*;
+use persisthotstuff_rst::crypto::KeyStore;
 use std::collections::BTreeMap;
 
 #[test]
 fn timeout_increments_view() {
     let config = Config { n: 4, f: 1, id: 0, timeout_ms: 1000 };
+    
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
 
     let mut replica = Replica {
         config: config.clone(),
@@ -18,6 +22,11 @@ fn timeout_increments_view() {
         committed_up_to: None,
         timeout_ms: 1000,
         view_start_time: Replica::current_time_ms(),
+        active_validators: (0..config.n as u64).collect(),
+        config_epoch: 0,
+        keystore: keystores[0].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     let initial_view = replica.current_view;
@@ -30,6 +39,9 @@ fn timeout_increments_view() {
 fn view_timeout_clears_vote_pool() {
     let config = Config { n: 4, f: 1, id: 0, timeout_ms: 1000 };
 
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
+
     let mut replica = Replica {
         config: config.clone(),
         current_view: 0,
@@ -41,6 +53,11 @@ fn view_timeout_clears_vote_pool() {
         committed_up_to: None,
         timeout_ms: 1000,
         view_start_time: Replica::current_time_ms(),
+        active_validators: (0..config.n as u64).collect(),
+        config_epoch: 0,
+        keystore: keystores[0].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     // Add some votes
@@ -58,6 +75,9 @@ fn view_timeout_clears_vote_pool() {
 fn correct_leader_selected_per_view() {
     let config = Config { n: 4, f: 1, id: 0, timeout_ms: 1000 };
 
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
+
     let mut replica = Replica {
         config: config.clone(),
         current_view: 0,
@@ -69,6 +89,11 @@ fn correct_leader_selected_per_view() {
         committed_up_to: None,
         timeout_ms: 1000,
         view_start_time: Replica::current_time_ms(),
+        active_validators: (0..config.n as u64).collect(),
+        config_epoch: 0,
+        keystore: keystores[0].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     // Test round-robin leader selection
@@ -86,6 +111,9 @@ fn correct_leader_selected_per_view() {
 fn am_i_leader_works_correctly() {
     let config = Config { n: 4, f: 1, id: 1, timeout_ms: 1000 };
 
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
+
     let mut replica = Replica {
         config: config.clone(),
         current_view: 0,
@@ -97,6 +125,11 @@ fn am_i_leader_works_correctly() {
         committed_up_to: None,
         timeout_ms: 1000,
         view_start_time: Replica::current_time_ms(),
+        active_validators: (0..config.n as u64).collect(),
+        config_epoch: 0,
+        keystore: keystores[1].clone(),  // Use the keystore for replica id=1
+        wal: None,
+        snapshot_counter: 0,
     };
 
     // Replica id=1, view=0: leader should be 0 % 4 = 0, so not leader
@@ -116,6 +149,9 @@ fn am_i_leader_works_correctly() {
 fn reset_timer_on_proposal() {
     let config = Config { n: 4, f: 1, id: 0, timeout_ms: 5000 };
 
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
+
     let mut replica = Replica {
         config: config.clone(),
         current_view: 0,
@@ -127,6 +163,11 @@ fn reset_timer_on_proposal() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,  // Old time
+        active_validators: (0..config.n as u64).collect(),
+        config_epoch: 0,
+        keystore: keystores[0].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     let old_time = replica.view_start_time;
@@ -139,6 +180,9 @@ fn reset_timer_on_proposal() {
 fn reset_timer_on_commit() {
     let config = Config { n: 4, f: 1, id: 0, timeout_ms: 5000 };
 
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
+
     let mut replica = Replica {
         config: config.clone(),
         current_view: 0,
@@ -150,6 +194,11 @@ fn reset_timer_on_commit() {
         committed_up_to: None,
         timeout_ms: 5000,
         view_start_time: 0,  // Old time
+        active_validators: (0..config.n as u64).collect(),
+        config_epoch: 0,
+        keystore: keystores[0].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     let old_time = replica.view_start_time;
@@ -162,6 +211,9 @@ fn reset_timer_on_commit() {
 fn sequential_view_changes() {
     let config = Config { n: 4, f: 1, id: 2, timeout_ms: 1000 };
 
+    let all_keys = KeyStore::generate_keys(4);
+    let keystores = KeyStore::distribute_keys(&all_keys);
+
     let mut replica = Replica {
         config: config.clone(),
         current_view: 0,
@@ -173,6 +225,11 @@ fn sequential_view_changes() {
         committed_up_to: None,
         timeout_ms: 1000,
         view_start_time: Replica::current_time_ms(),
+        active_validators: (0..config.n as u64).collect(),
+        config_epoch: 0,
+        keystore: keystores[2].clone(),
+        wal: None,
+        snapshot_counter: 0,
     };
 
     // Simulate several view changes and check leader transitions
