@@ -1,0 +1,92 @@
+// PersistHotStuff — Pluggable State Machine gRPC Interface
+//
+// External applications implement the AppService to receive committed
+// commands from the consensus layer, and to participate in the
+// snapshot / recovery lifecycle.
+//
+// This interface is directly inspired by Tendermint's ABCI, adapted
+// for HotStuff's 3-chain commit semantics.
+
+syntax = "proto3";
+
+package persisthotstuff.app;
+
+// ---------------------------------------------------------------------------
+// Service definition
+// ---------------------------------------------------------------------------
+
+service AppService {
+  // Execute a committed command.
+  // Called exactly once for each block that passes the 3-chain commit rule,
+  // in strict commit order.  Implementations MUST be deterministic: given
+  // the same command sequence, every replica must produce the same state.
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+
+  // Capture the current application state as an opaque byte blob.
+  // Called by the consensus layer when taking a periodic snapshot.
+  rpc TakeSnapshot(SnapshotRequest) returns (SnapshotResponse);
+
+  // Restore application state from a previously captured snapshot.
+  // Called during crash recovery before the system resumes consensus.
+  rpc RestoreSnapshot(RestoreRequest) returns (RestoreResponse);
+}
+
+// ---------------------------------------------------------------------------
+// Execute
+// ---------------------------------------------------------------------------
+
+// Metadata and payload for a committed command.
+message ExecuteRequest {
+  uint64 block_hash   = 1;
+  uint64 view         = 2;
+  uint64 epoch        = 3;
+  uint64 proposer     = 4;
+  uint64 commit_index = 5;
+  CommandPayload command = 6;
+}
+
+// The command carried by a committed block.
+message CommandPayload {
+  oneof kind {
+    Empty            no_op            = 1;
+    string           client_tx        = 2;
+    JoinValidator    join_validator   = 3;
+    RemoveValidator  remove_validator = 4;
+  }
+}
+
+message Empty {}
+
+message JoinValidator {
+  uint64 replica_id = 1;
+  bytes  public_key = 2;
+}
+
+message RemoveValidator {
+  uint64 replica_id = 1;
+}
+
+message ExecuteResponse {
+  bool   success = 1;
+  bytes  result  = 2;  // opaque application result
+  string error   = 3;  // human-readable error (empty on success)
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot / Restore
+// ---------------------------------------------------------------------------
+
+message SnapshotRequest {}
+
+message SnapshotResponse {
+  bytes state = 1;  // opaque application state blob
+}
+
+message RestoreRequest {
+  bytes state = 1;  // blob previously returned by TakeSnapshot
+}
+
+message RestoreResponse {
+  bool   success = 1;
+  string error   = 2;
+}

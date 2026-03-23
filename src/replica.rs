@@ -42,6 +42,28 @@ pub struct Replica {
     pub wal: Option<WAL>,
     /// Monotonically increasing snapshot sequence number.
     pub snapshot_counter: u64,
+    /// Pluggable application state machine.
+    /// When `Some`, committed commands are forwarded to the application.
+    pub app: Option<Box<dyn crate::app::App>>,
+    /// App state loaded from a snapshot but not yet restored because the
+    /// `App` had not been attached at recovery time.  Consumed by
+    /// `attach_app()`.
+    pub pending_app_state: Option<Vec<u8>>,
+
+    // ── Enhanced Pacemaker: Dummy Proposals (Section 4.4) ──────────
+
+    /// Pending client commands waiting to be proposed.  The leader
+    /// dequeues from this queue when building the next block.
+    pub client_queue: Vec<ConsensusCommand>,
+    /// When `true`, the pacemaker will inject dummy NoOp blocks during
+    /// idle periods to keep the 3-chain growing.
+    pub dummy_proposal_enabled: bool,
+    /// Timestamp (ms) of the most recent block proposal by this replica.
+    pub last_proposed_time: u128,
+    /// Idle threshold (ms) after which the pacemaker injects a dummy
+    /// proposal if the client queue is empty and the 3-chain is
+    /// incomplete.
+    pub dummy_timeout_ms: u64,
 }
 
 use crate::visualiser::{print_block_tree_enhanced, print_commit_log, 
@@ -335,6 +357,7 @@ impl Replica {
             command: ConsensusCommand::NoOp,
         };
         self.block_tree.insert(hash, block.clone());
+        self.last_proposed_time = Self::current_time_ms();
         Some(block)
     }
 
@@ -358,6 +381,7 @@ impl Replica {
             command,
         };
         self.block_tree.insert(hash, block.clone());
+        self.last_proposed_time = Self::current_time_ms();
         Some(block)
     }
 
@@ -389,6 +413,7 @@ impl Replica {
             command: ConsensusCommand::NoOp,
         };
         self.block_tree.insert(unique_hash, block.clone());
+        self.last_proposed_time = Self::current_time_ms();
         Some(block)
     }
 
@@ -532,6 +557,21 @@ impl Replica {
 
         // Apply membership reconfiguration atomically at commit time.
         self.apply_membership_command(&block.command);
+
+        // Execute through pluggable state machine (if attached).
+        if let Some(ref mut app) = self.app {
+            let cmd = crate::app::CommittedCommand {
+                block_hash: block.hash,
+                view: block.view,
+                epoch: block.epoch,
+                proposer: block.proposer,
+                command: block.command.clone(),
+                commit_index: self.committed_log.len().saturating_sub(1),
+            };
+            if let Err(e) = app.apply(&cmd) {
+                eprintln!("App execution error for block {}: {}", block.hash, e);
+            }
+        }
 
         // view change on commit
         self.on_commit();
@@ -712,11 +752,155 @@ impl Replica {
         self.dynamic_leader_for_view(self.current_view) == self.config.id
     }
 
+    // ===== Enhanced Pacemaker: Dummy Proposals =====
+
+    /// Enable dummy-proposal injection by the pacemaker.
+    ///
+    /// When enabled, the leader will propose NoOp blocks after
+    /// `timeout_ms` of idle time to keep the 3-chain growing so that
+    /// pending client commands can commit even when no new client
+    /// requests arrive.
+    ///
+    /// # Arguments
+    /// * `timeout_ms` – milliseconds of idle time before a dummy is injected
+    pub fn enable_dummy_proposals(&mut self, timeout_ms: u64) {
+        self.dummy_proposal_enabled = true;
+        self.dummy_timeout_ms = timeout_ms;
+    }
+
+    /// Disable dummy-proposal injection.
+    pub fn disable_dummy_proposals(&mut self) {
+        self.dummy_proposal_enabled = false;
+    }
+
+    /// Enqueue a client command for the next proposal.
+    ///
+    /// The leader will dequeue from this queue when building the next
+    /// block.  If the queue is empty and dummy proposals are enabled,
+    /// the pacemaker will inject a NoOp block instead.
+    pub fn enqueue_command(&mut self, cmd: ConsensusCommand) {
+        self.client_queue.push(cmd);
+    }
+
+    /// Number of blocks in the tree that have not yet been committed.
+    ///
+    /// This drives the pacemaker's "fewer than 3 pending blocks"
+    /// condition: if this count is < 3 the 3-chain cannot form and a
+    /// dummy proposal may be needed.
+    pub fn pending_uncommitted_count(&self) -> usize {
+        self.block_tree
+            .len()
+            .saturating_sub(self.committed_log.len())
+    }
+
+    /// Check whether the pacemaker should inject a dummy NoOp block.
+    ///
+    /// Returns `true` iff **all** of the following hold:
+    /// 1. Dummy proposals are enabled.
+    /// 2. This replica is the leader for the current view.
+    /// 3. The client command queue is empty.
+    /// 4. More than `dummy_timeout_ms` have elapsed since the last proposal.
+    /// 5. No block is currently ready to commit via the 3-chain rule,
+    ///    meaning the chain is still incomplete and needs more blocks.
+    pub fn should_propose_dummy(&self) -> bool {
+        if !self.dummy_proposal_enabled {
+            return false;
+        }
+        if !self.am_i_leader() {
+            return false;
+        }
+        if !self.client_queue.is_empty() {
+            return false;
+        }
+        let elapsed = Self::current_time_ms().saturating_sub(self.last_proposed_time);
+        if elapsed < self.dummy_timeout_ms as u128 {
+            return false;
+        }
+        // The 3-chain is incomplete — no block can commit right now.
+        self.find_committed_block().is_none()
+    }
+
+    /// Propose the next block for this view.
+    ///
+    /// Behaviour:
+    /// 1. If the client queue has a command, dequeue it and propose.
+    /// 2. Otherwise, if the pacemaker says a dummy is needed, propose
+    ///    a NoOp block.
+    /// 3. Otherwise, return `None`.
+    ///
+    /// Returns `None` if this replica is not the leader or no proposal
+    /// is warranted.
+    pub fn propose_next(&mut self, view: u64) -> Option<Block> {
+        if !self.is_leader(view) {
+            return None;
+        }
+
+        if let Some(cmd) = self.client_queue.pop() {
+            return self.propose_command(view, cmd);
+        }
+
+        if self.should_propose_dummy() {
+            return self.propose(view);
+        }
+
+        None
+    }
+
+    /// Like [`propose_next`] but uses a network-assigned hash to avoid
+    /// collisions in multi-replica simulations.
+    pub fn propose_next_with_hash(&mut self, view: u64, unique_hash: Hash) -> Option<Block> {
+        if !self.is_leader(view) {
+            return None;
+        }
+
+        if let Some(cmd) = self.client_queue.pop() {
+            // Build a block with the unique hash and client command.
+            let parent = if let Some(qc) = &self.high_qc {
+                Some(qc.block_hash)
+            } else {
+                self.latest_block_hash()
+            };
+            let block = Block {
+                hash: unique_hash,
+                parent,
+                view,
+                epoch: self.config_epoch,
+                proposer: self.config.id,
+                qc: self.high_qc.clone(),
+                command: cmd,
+            };
+            self.block_tree.insert(unique_hash, block.clone());
+            self.last_proposed_time = Self::current_time_ms();
+            return Some(block);
+        }
+
+        if self.should_propose_dummy() {
+            return self.propose_with_hash(view, unique_hash);
+        }
+
+        None
+    }
+
     // ===== Persistence & Snapshot Methods =====
 
     /// Attach a WAL handle to this replica so future mutations are logged.
     pub fn attach_wal(&mut self, wal: WAL) {
         self.wal = Some(wal);
+    }
+
+    /// Attach a pluggable application state machine.
+    ///
+    /// If the replica was recovered from a snapshot that contained
+    /// application state, the state is restored into the app
+    /// automatically.
+    pub fn attach_app(&mut self, mut app: Box<dyn crate::app::App>) {
+        if let Some(ref state) = self.pending_app_state {
+            if let Err(e) = app.restore(state) {
+                eprintln!("Failed to restore app state: {}", e);
+            }
+        }
+        self.pending_app_state = None;
+        self.app = Some(app);
     }
 
     /// Export state for join catch-up (latest snapshot + WAL tail).
@@ -845,6 +1029,9 @@ impl Replica {
     /// # Errors
     /// Propagates I/O errors from snapshot write or WAL truncation.
     pub fn take_snapshot(&mut self, data_dir: &Path) -> Result<(), String> {
+        // Capture application state (if an app is attached).
+        let app_state = self.app.as_ref().and_then(|app| app.snapshot().ok());
+
         // Capture a point-in-time snapshot of the entire state.
         let snap = Snapshot::capture(
             self.snapshot_counter,
@@ -857,6 +1044,7 @@ impl Replica {
             self.committed_up_to,
             self.high_qc.as_ref(),
             self.next_hash,
+            app_state,
         );
 
         // Write to disk (bincode + SHA-256 sidecar).

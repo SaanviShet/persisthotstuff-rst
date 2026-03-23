@@ -1,0 +1,120 @@
+# ──────────────────────────────────────────────────────────
+#  docker-compose.yml — Distributed PersistHotStuff Deployment
+#
+#  Simulates separate machines using Docker containers.
+#  Each container runs one replica with its own WAL/snapshot volume.
+#
+#  Network:  172.28.0.0/16   (bridge "hotstuff-net")
+#  Replicas: replica-0  172.28.1.1
+#            replica-1  172.28.1.2
+#            replica-2  172.28.1.3
+#            replica-3  172.28.1.4
+#
+#  Usage:
+#    docker compose build
+#    docker compose up                     # launch all 4 replicas
+#    docker compose run --rm orchestrator  # run the test orchestrator
+#
+#  To simulate network latency / packet loss:
+#    docker compose exec replica-0 tc qdisc add dev eth0 root netem delay 50ms 10ms loss 1%
+# ──────────────────────────────────────────────────────────
+networks:
+  hotstuff-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+x-replica-common: &replica-common
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  networks:
+    hotstuff-net: {}
+  cap_add:
+    - NET_ADMIN          # needed for `tc` network shaping
+
+services:
+  # ─── Replica nodes ────────────────────────────────────────
+  replica-0:
+    <<: *replica-common
+    container_name: hotstuff-replica-0
+    hostname: replica-0
+    environment:
+      REPLICA_ID: "0"
+      REPLICA_COUNT: "4"
+      PEERS: "replica-1:9000,replica-2:9000,replica-3:9000"
+    volumes:
+      - replica0-data:/app/data
+    networks:
+      hotstuff-net:
+        ipv4_address: 172.28.1.1
+    command: ["sleep", "infinity"]
+
+  replica-1:
+    <<: *replica-common
+    container_name: hotstuff-replica-1
+    hostname: replica-1
+    environment:
+      REPLICA_ID: "1"
+      REPLICA_COUNT: "4"
+      PEERS: "replica-0:9000,replica-2:9000,replica-3:9000"
+    volumes:
+      - replica1-data:/app/data
+    networks:
+      hotstuff-net:
+        ipv4_address: 172.28.1.2
+    command: ["sleep", "infinity"]
+
+  replica-2:
+    <<: *replica-common
+    container_name: hotstuff-replica-2
+    hostname: replica-2
+    environment:
+      REPLICA_ID: "2"
+      REPLICA_COUNT: "4"
+      PEERS: "replica-0:9000,replica-1:9000,replica-3:9000"
+    volumes:
+      - replica2-data:/app/data
+    networks:
+      hotstuff-net:
+        ipv4_address: 172.28.1.3
+    command: ["sleep", "infinity"]
+
+  replica-3:
+    <<: *replica-common
+    container_name: hotstuff-replica-3
+    hostname: replica-3
+    environment:
+      REPLICA_ID: "3"
+      REPLICA_COUNT: "4"
+      PEERS: "replica-0:9000,replica-1:9000,replica-2:9000"
+    volumes:
+      - replica3-data:/app/data
+    networks:
+      hotstuff-net:
+        ipv4_address: 172.28.1.4
+    command: ["sleep", "infinity"]
+
+  # ─── Test orchestrator (runs evaluations against the cluster) ──
+  orchestrator:
+    <<: *replica-common
+    container_name: hotstuff-orchestrator
+    hostname: orchestrator
+    depends_on:
+      - replica-0
+      - replica-1
+      - replica-2
+      - replica-3
+    profiles: ["test"]
+    networks:
+      hotstuff-net:
+        ipv4_address: 172.28.1.100
+    # Run the crash-recovery eval inside the orchestrator container
+    command: ["./eval_crash_recovery"]
+
+volumes:
+  replica0-data:
+  replica1-data:
+  replica2-data:
+  replica3-data:

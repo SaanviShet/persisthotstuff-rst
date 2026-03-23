@@ -27,6 +27,12 @@ fn three_chain_commits_block() {
         keystore: keystores[0].clone(),
         wal: None,
         snapshot_counter: 0,
+        app: None,
+        pending_app_state: None,
+        client_queue: Vec::new(),
+        dummy_proposal_enabled: false,
+        last_proposed_time: 0,
+        dummy_timeout_ms: 0,
     };
 
     // Genesis block B0
@@ -112,6 +118,12 @@ fn insufficient_qc_blocks_dont_commit() {
         keystore: keystores[0].clone(),
         wal: None,
         snapshot_counter: 0,
+        app: None,
+        pending_app_state: None,
+        client_queue: Vec::new(),
+        dummy_proposal_enabled: false,
+        last_proposed_time: 0,
+        dummy_timeout_ms: 0,
     };
 
     // Genesis block B0 (no QC)
@@ -181,6 +193,12 @@ fn commit_log_grows_correctly() {
         keystore: keystores[0].clone(),
         wal: None,
         snapshot_counter: 0,
+        app: None,
+        pending_app_state: None,
+        client_queue: Vec::new(),
+        dummy_proposal_enabled: false,
+        last_proposed_time: 0,
+        dummy_timeout_ms: 0,
     };
 
     // Genesis block B0
@@ -317,6 +335,12 @@ fn cannot_commit_same_block_twice() {
         keystore: keystores[0].clone(),
         wal: None,
         snapshot_counter: 0,
+        app: None,
+        pending_app_state: None,
+        client_queue: Vec::new(),
+        dummy_proposal_enabled: false,
+        last_proposed_time: 0,
+        dummy_timeout_ms: 0,
     };
 
     // Genesis block B0

@@ -64,6 +64,12 @@ fn main() {
         keystore: keystores[0].clone(),
         wal: None,
         snapshot_counter: 0,
+        app: None,
+        pending_app_state: None,
+        client_queue: Vec::new(),
+        dummy_proposal_enabled: false,
+        last_proposed_time: 0,
+        dummy_timeout_ms: 0,
     };
 
     // Attach a WAL so every mutation is logged to disk.
@@ -190,6 +196,7 @@ fn main() {
         replica.committed_up_to,
         replica.high_qc.as_ref(),
         replica.next_hash,
+        None,                          // app_state
     );
     let snap_path = snap.save(data_dir).expect("Failed to save snapshot");
     println!("Snapshot saved to {:?}", snap_path);
