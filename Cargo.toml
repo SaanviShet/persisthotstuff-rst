@@ -50,3 +50,7 @@ path = "examples/eval_membership_cycling.rs"
 [[example]]
 name = "eval_commit_latency"
 path = "examples/eval_commit_latency.rs"
+
+[[example]]
+name = "eval_performance_comparison"
+path = "examples/eval_performance_comparison.rs"
