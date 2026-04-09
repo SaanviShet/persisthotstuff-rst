@@ -1,0 +1,64 @@
+%_____________________________________________________________________________________________ 
+% Chapter 1: Introduction
+%_____________________________________________________________________________________________ 
+\chapter{Introduction}
+\label{sec:introduction}
+
+Anyone who has tried to turn a BFT consensus paper into running code knows the frustration:
+the protocol itself may be clean, but everything around it---storage, configuration changes,
+application hooks, and keeping the system alive when nobody is sending requests---gets
+hand-waved away.  HotStuff~\cite{hotstuff2019} is a good example.  On paper it is one of
+the tidiest BFT protocols available: $O(n)$ messages per decision, optimistic
+responsiveness, and a 3-chain commit rule that is easy to reason about.  Meta trusted it
+enough to use it as the consensus engine for Diem.  But what about the publicly available
+prototypes?  They crash and lose everything.  They assume that the validator set never
+changes.  They hard-code a trivial state machine, and if clients stop sending requests for a
+while, the protocol stalls.
+
+We are not the first to notice.  A recent Stanford CS244B course
+report~\cite{stanford_hotstuff2024} catalogued exactly these four pain points after the
+authors tried to build a working HotStuff system from scratch.
+
+\begin{enumerate}
+  \item \textbf{No persistence.}  State lives in RAM.  Kill a replica and it forgets
+    everything, including but not limited to committed blocks, votes, and quorum.
+  \item \textbf{Static membership.}  The validator set is baked in at startup.  If a fifth
+    node needs to be added, we would need to restart the whole cluster.
+  \item \textbf{Hard-coded state machine.}  The ``application'' is usually an append-only
+    log with no hooks for real business logic.
+  \item \textbf{Liveness stalls under low load.}  The 3-chain rule needs three consecutive
+    justified blocks.  No client requests means no new blocks, which means nothing ever
+    commits.
+\end{enumerate}
+
+We started this project because we wanted a HotStuff implementation that addresses all four
+issues in one coherent system.  The result is \textit{PersistHotStuff}, whose design
+proposal we will present here, backed by implementation in Rust~\cite{rust-implementation}.
+
+\section{Contributions}
+
+Our contributions, then, are:
+
+\begin{itemize}
+  \item A \textbf{Persistence layer} made up of Write Ahead Logs (WAL) + snapshots adapted
+    from Raft~\cite{raft2014} to the Byzantine setting.
+  \item A \textbf{feature for dynamic membership} via consensus-driven reconfiguration
+    commands.
+  \item A \textbf{pluggable state machine interface} (trait-based, with gRPC for
+    out-of-process applications).
+  \item A \textbf{pacemaker design} that uses dummy proposals to keep the 3-chain growing
+    during idle periods.
+  \item An \textbf{open-source Rust codebase} with Ed25519 authentication, a simulation
+    framework, and preliminary test results.
+\end{itemize}
+
+\section{Report Organisation}
+
+The rest of this report is structured as follows.
+Chapter~\ref{sec:background} provides background on the system model and HotStuff mechanics.
+Chapter~\ref{sec:related_work} surveys related work.
+Chapter~\ref{sec:system_design} presents the system design in detail.
+Chapter~\ref{sec:evaluation} reports evaluation results---simulation, stress tests,
+formal verification, and performance benchmarks.
+Chapter~\ref{sec:discussion} discusses design trade-offs and safety/liveness arguments.
+Chapter~\ref{sec:conclusion} concludes.

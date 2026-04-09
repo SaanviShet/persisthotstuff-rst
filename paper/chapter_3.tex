@@ -1,0 +1,56 @@
+%_____________________________________________________________________________________________ 
+% Chapter 3: Related Work
+%_____________________________________________________________________________________________ 
+\chapter{Related Work}
+\label{sec:related_work}
+
+It helps to understand what each related system does well and where it
+stops short, since our design borrows selectively from several of them.
+
+\section{BFT Consensus Protocols}
+
+Practical Byzantine Fault Tolerance (PBFT)~\cite{pbft1999} proved that
+practical BFT was possible, but its $O(n^2)$ all-to-all communication
+makes it painful beyond a couple of dozen nodes.
+\hotstuff{}~\cite{hotstuff2019} brought that down to $O(n)$ by
+funnelling everything through a leader and using QCs.  More recent
+variants such as HotStuff-1~\cite{hotstuff1_2024} try to cut one
+communication phase, and Sync HotStuff~\cite{synchotstuff2020} gets
+better throughput when the network is synchronous, focusing on
+squeezing out better latency or throughput from the core protocol.
+None of them tackle the four practical gaps we are interested in.
+
+\section{Persistence}
+
+For persistence, the closest analogue is Raft~\cite{raft2014}.  Its
+WAL-plus-snapshot approach has been tested in production systems such
+as etcd, and the recovery semantics are well understood.  The catch is
+that Raft assumes only crash faults; transplanting its storage patterns
+into a Byzantine setting requires some care.  For instance, a
+recovering replica cannot just trust its own log---it needs checksum
+verification and must re-validate against the quorum.
+
+\section{Dynamic Membership}
+
+DynaNet~\cite{dynanet2025} is one of the few BFT systems that
+explicitly supports dynamic validator sets.  Our membership module
+takes a simpler route: we treat \texttt{JOIN} and \texttt{REMOVE} as
+regular consensus commands so that the existing 3-chain commit rule
+provides the atomicity guarantee for free.
+
+\section{Pluggable State Machines}
+
+Tendermint~\cite{tendermint} deserves credit for popularising the idea
+of separating consensus from application logic through its ABCI.
+However, its main focus is on decentralised applications (dApps).  Our
+\texttt{App} trait and gRPC interface borrow this philosophy directly
+and apply it to applications in general.  We have targeted a
+Rust-native trait as the primary interface, with gRPC as an optional
+bridge for applications written in other languages.
+
+\section{Liveness under Low Load}
+
+As for liveness, the idea of injecting no-op commands when the system
+is idle goes back to early Paxos literature.  We are not claiming
+novelty there, just noting that nobody seems to have wired it into a
+HotStuff pacemaker properly.

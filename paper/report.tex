@@ -1,0 +1,205 @@
+%_____________________________________________________________________________________________ 
+% LATEX Template: Department of Comp/IT BTech Project Reports
+% Main Report — PersistHotStuff
+%_____________________________________________________________________________________________ 
+
+\documentclass[a4paper,12pt,onecolumn]{report}
+
+%_____________________________________________________________________________________________ 
+% Inclusion of Required Packages
+%_____________________________________________________________________________________________ 
+\usepackage{graphicx}
+\usepackage{color}
+\usepackage{epsfig,float}
+
+% Math & symbols
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{textcomp}
+
+% Algorithms
+\usepackage{algorithmic}
+\usepackage{algorithm}
+
+% Tables
+\usepackage{booktabs}
+\usepackage{multirow}
+
+% TikZ diagrams
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric, chains, calc, fit, decorations.pathreplacing}
+
+% Lists and URLs
+\usepackage{enumitem}
+\usepackage{url}
+\def\UrlFont{\rmfamily}
+
+% Colours
+\usepackage{xcolor}
+
+% Hyperlinks
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!70!black,
+  citecolor=green!50!black,
+  urlcolor=blue!60!black,
+}
+
+%_____________________________________________________________________________________________ 
+% Page Layout
+%_____________________________________________________________________________________________
+
+\usepackage[left=2.5cm,top=2cm,right=2cm,bottom=2cm,bindingoffset=0.5cm]{geometry}
+\setlength{\textwidth}{6.5in}
+\setlength{\textheight}{10in}
+\setlength{\topmargin}{0.0in}
+\setlength{\oddsidemargin}{0.0in}
+\setlength{\headheight}{0.0in}
+\setlength{\headsep}{0.0in}
+\setlength{\topskip}{0.0in}
+
+%_____________________________________________________________________________________________ 
+% Font Definition
+%_____________________________________________________________________________________________ 
+\fontencoding{T1}
+\fontfamily{cmr}
+\fontseries{m}
+\fontshape{n}
+\fontsize{12pt}{5}
+\linespread{1.5}
+\selectfont
+
+%_____________________________________________________________________________________________ 
+% Custom Commands
+%_____________________________________________________________________________________________ 
+\newcommand{\persisthotstuff}{\textsc{PersistHotStuff}}
+\newcommand{\hotstuff}{\textsc{HotStuff}}
+\newcommand{\bigO}[1]{\mathcal{O}(#1)}
+
+%_____________________________________________________________________________________________ 
+% Main report starts here
+%_____________________________________________________________________________________________ 
+
+\begin{document}	% Start of Report
+%_____________________________________________________________________________________________ 
+\input{titlepage.tex}
+
+\input{certi.tex}
+
+\input{abstract.tex}	% Abstract: Independently typeset in file abstract.tex
+
+\tableofcontents		% Generate the table of contents
+
+\listoftables
+\addcontentsline{toc}{chapter}{List of Tables}
+
+\listoffigures
+\addcontentsline{toc}{chapter}{List of Figures}
+
+\chapter*{List of Symbols}
+\addcontentsline{toc}{chapter}{List of Symbols}
+
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Symbol} & \textbf{Meaning} \\
+\midrule
+$n$            & Total number of replicas in the cluster \\
+$f$            & Maximum number of Byzantine faulty replicas \\
+$V$, $V_r$     & Validator set; validator set at replica $r$ \\
+$B$            & A block in the block tree \\
+$B_0, B_1, B_2$& Consecutive blocks forming the 3-chain \\
+QC             & Quorum Certificate ($\ge 2f{+}1$ valid signatures) \\
+WAL            & Write-Ahead Log \\
+BFT            & Byzantine Fault Tolerance \\
+PBFT           & Practical Byzantine Fault Tolerance \\
+GST            & Global Stabilisation Time \\
+gRPC           & Google Remote Procedure Call framework \\
+TLA+           & Temporal Logic of Actions (specification language) \\
+TLC            & TLA+ model checker \\
+ABCI           & Application BlockChain Interface (Tendermint) \\
+Ed25519        & Edwards-curve Digital Signature Scheme \\
+BLS            & Boneh--Lynn--Shacham aggregate signature scheme \\
+CRC32          & 32-bit Cyclic Redundancy Check \\
+SHA-256        & Secure Hash Algorithm, 256-bit digest \\
+$\mathcal{T}$  & Block tree \\
+$\mathcal{C}$  & Set of committed blocks \\
+\bottomrule
+\end{tabular}
+
+\newpage
+\pagenumbering{arabic}	% Change to Arabic numbers for main chapters.
+
+\input{chapter_1.tex}
+\input{chapter_2.tex}
+\input{chapter_3.tex}
+\input{chapter_4.tex}
+\input{chapter_5.tex}
+\input{chapter_6.tex}
+\input{chapter_7.tex}
+
+\appendix
+\chapter{TLA+ Model Parameters and Invariant Summary}
+\label{app:tla}
+
+The TLA+ specification of \persisthotstuff{}'s dynamic membership protocol was
+model-checked with TLC using the following parameters:
+
+\begin{itemize}
+  \item $N = 4$ replicas (bootstrap set $\{0,1,2\}$ with one candidate replica)
+  \item Fault bound $f = 0$ for the bootstrap configuration
+  \item $\text{MAX\_VIEW} = 4$, $\text{MAX\_HASH} = 9$, $\text{MAX\_EPOCH} = 2$
+\end{itemize}
+
+\noindent All 11 safety invariants were verified with zero violations over
+7.3\,M distinct states (20.5\,M generated, depth~13).
+
+\begin{table}[H]
+\centering
+\caption{TLA+ safety invariants verified by TLC}
+\begin{tabular}{lp{9cm}}
+\toprule
+\textbf{Invariant} & \textbf{Property} \\
+\midrule
+ValidatorSetBFT            & $|V_r| \ge 3f{+}1$ after each activation \\
+QuorumIntersection         & Any two quorums of $V_r$ share at least one honest replica \\
+CommitSafetyAcrossEpochs   & No cross-epoch prefix contradictions \\
+EpochMonotone              & Configuration epochs never decrease \\
+ValidTransitionsOnly       & $n \ge 4 \wedge n \bmod 3 = 1$ enforced \\
+ConsistentMembershipView   & Same-epoch replicas agree on validator set $V$ \\
+QCsAlwaysValid             & QC signers $\subseteq V$ at the QC's epoch \\
+NoDoubleVote               & No replica votes twice for the same view \\
+UniqueHashes               & All block hashes are distinct \\
+CommittedBlocksInTree      & Every committed block is present in the block tree \\
+VotePoolSignersValid       & All votes in the pool carry valid signatures \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\chapter{Rust Crate Structure}
+\label{app:crate}
+
+The \persisthotstuff{} codebase is organised as a single Rust crate with the
+following source modules:
+
+\begin{itemize}
+  \item \texttt{replica.rs} --- Core HotStuff state machine and 3-chain commit logic.
+  \item \texttt{wal.rs} --- Append-only Write-Ahead Log with CRC32 per-entry checksums.
+  \item \texttt{snapshot.rs} --- Snapshot creation, serialisation (\texttt{bincode}), and restoration.
+  \item \texttt{recovery.rs} --- Combined snapshot + WAL replay procedure.
+  \item \texttt{network.rs} --- Asynchronous peer-to-peer message passing (Tokio).
+  \item \texttt{crypto.rs} --- Ed25519 key management, signing, and QC aggregation.
+  \item \texttt{app.rs} --- \texttt{App} trait definition and dummy no-op implementation.
+  \item \texttt{grpc.rs} --- gRPC bridge for out-of-process state machine applications.
+  \item \texttt{config.rs} --- Cluster configuration, validator-set management.
+  \item \texttt{simulation.rs} --- In-process multi-replica simulation harness.
+  \item \texttt{types.rs} --- Shared data types: \texttt{Block}, \texttt{QC}, \texttt{Vote}, \texttt{Hash}.
+  \item \texttt{visualiser.rs} --- Block-tree ASCII visualisation utility.
+\end{itemize}
+
+\bibliographystyle{plain}
+\bibliography{coep_compit_report}
+%_____________________________________________________________________________________________ 
+\end{document}			% End of Report
+
