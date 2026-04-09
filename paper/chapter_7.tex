@@ -1,0 +1,30 @@
+%_____________________________________________________________________________________________ 
+% Chapter 7: Conclusion
+%_____________________________________________________________________________________________ 
+\chapter{Conclusion}
+\label{sec:conclusion}
+
+We have presented the design and evaluation of \persisthotstuff{}, a modular framework that
+closes four practical gaps in existing HotStuff prototypes: crash-safe persistence, dynamic
+membership, pluggable application logic, and liveness under low load.
+
+All four extensions are fully implemented and rigorously tested in Rust.  Beyond simulation
+and stress testing, we provide two new contributions that strengthen the technical
+foundation:
+
+\begin{itemize}[itemsep=2pt]
+  \item A TLA+ specification of the dynamic membership protocol, verified by TLC across
+    7.3\,M~distinct states with zero violations of 11~safety invariants; including quorum
+    intersection, commit safety across epochs, and valid transition enforcement.
+  \item A performance benchmark at cluster sizes $n \in \{4, 7, 10, 13\}$ confirming $O(n)$
+    message complexity ($3(n{-}1)$ messages/round, matching the analytical HotStuff bound)
+    and demonstrating $9.0\times$ fewer messages than PBFT at $n{=}13$.
+\end{itemize}
+
+The implementation is available on GitHub~\cite{rust-implementation}.
+
+If there is one takeaway, it is that the gap between a BFT \emph{protocol} and a BFT
+\emph{system} is larger than it looks.  Storage, membership, application interfaces, and
+liveness under real workloads all matter, and addressing them together rather than one at a
+time forces design decisions that would not surface otherwise.  We hope this blueprint is
+useful to others working in the same space.

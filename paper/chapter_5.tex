@@ -1,0 +1,152 @@
+%_____________________________________________________________________________________________ 
+% Chapter 5: Evaluation
+%_____________________________________________________________________________________________ 
+\chapter{Evaluation}
+\label{sec:evaluation}
+
+We evaluate \persisthotstuff{} on three axes: correctness under adversarial conditions
+(simulation and stress tests), formal safety verification of dynamic membership (TLA+ model
+checking), and comparative performance against PBFT and Raft.
+
+%-----------------------------------------------------------------------------
+\section{Simulation Results}
+
+Table~\ref{tab:simulation_results} summarises multi-replica simulations
+($n{=}4$, $f{=}1$).  The key finding is \textbf{zero safety violations} across all scales;
+the 2--5 block gap between proposed and committed counts reflects the trailing 3-chain.
+
+\begin{table}[t]
+\caption{Simulation results ($n{=}4$, $f{=}1$, single-process)}
+\centering
+\begin{tabular}{ccccc}
+\toprule
+\textbf{Rounds} & \textbf{Proposed} & \textbf{Committed}
+  & \textbf{Messages} & \textbf{Safety Viol.} \\
+\midrule
+100  & 100  & 97  & 800  & 0 \\
+500  & 500  & 495 & 4000 & 0 \\
+1000 & 1000 & 998 & 8000 & 0 \\
+\bottomrule
+\end{tabular}
+\label{tab:simulation_results}
+\end{table}
+
+%-----------------------------------------------------------------------------
+\section{Stress Testing}
+
+\noindent\textbf{Crash recovery.}\quad
+We ran 120 consecutive kill/restart cycles ($n{=}4$, $f{=}1$), recovering each victim from
+its most recent snapshot plus WAL replay.  All \textbf{120/120} recoveries succeeded with
+\textbf{zero safety violations}; 844~blocks committed ($\approx$7.0 per cycle).
+
+\smallskip\noindent\textbf{Dynamic membership.}\quad
+Table~\ref{tab:membership} summarises 35~membership-change scenarios.  Valid transitions
+($3{\to}4$, $5{\to}4$) commit via the 3-chain rule; invalid transitions ($4{\to}5$,
+$4{\to}3$) are rejected by the \texttt{can\_apply\_new\_validator\_count} invariant
+($n \ge 4$, $n \bmod 3 = 1$).  All 35/35 pass with zero violations.
+
+\begin{table}[t]
+\caption{Dynamic membership evaluation (35 scenarios, 0 violations)}
+\centering
+\begin{tabular}{llcc}
+\toprule
+\textbf{Scenario} & \textbf{Transition} & \textbf{Runs} & \textbf{Pass} \\
+\midrule
+A -- Valid join       & $3 \to 4$                          & 10 & 10 \\
+B -- Valid remove     & $5 \to 4$                          & 10 & 10 \\
+C -- Reject bad join  & $4 \to 5$ (invalid)                & 5  & 5  \\
+D -- Reject bad remove& $4 \to 3$ (invalid)                & 5  & 5  \\
+E -- End-to-end cycle & $3{\to}4{\to}5$ (rejected)         & 5  & 5  \\
+\bottomrule
+\end{tabular}
+\label{tab:membership}
+\end{table}
+
+\smallskip\noindent\textbf{Commit latency (pacemaker).}\quad
+Without the dummy-proposal pacemaker, 0/50 trials commit within 200~rounds (the 3-chain
+stalls).  With the pacemaker, all 50/50 commit in exactly 3~rounds---the theoretical
+minimum.
+
+%-----------------------------------------------------------------------------
+\section{Formal Verification of Dynamic Membership Safety}
+\label{sec:formal_verification}
+
+We developed a TLA+ specification~\cite{lamport2002tla+} that models the dynamic membership
+protocol.  The specification captures the full consensus protocol extended with
+\texttt{JoinValidator} and \texttt{RemoveValidator} actions that modify the active validator
+set atomically at commit time.
+
+\smallskip\noindent\textbf{Model parameters:}\quad
+$N{=}4$ replicas (bootstrap set $\{0,1,2\}$ with one candidate), fault bound $f{=}0$ for
+the bootstrap configuration, $\text{MAX\_VIEW}{=}4$, $\text{MAX\_HASH}{=}9$,
+$\text{MAX\_EPOCH}{=}2$.
+
+\smallskip\noindent\textbf{Safety invariants verified:}\quad
+We specify seven membership-specific invariants plus four baseline consensus invariants, all
+checked by TLC:
+
+\begin{enumerate}[label=\textbf{\arabic*},leftmargin=*,nosep]
+  \item \textbf{ValidatorSetBFT}: $|V_r| \ge 3f{+}1$ post-activation.
+  \item \textbf{QuorumIntersection}: any two quorums of $V_r$ overlap.
+  \item \textbf{CommitSafetyAcrossEpochs}: no cross-epoch prefix contradictions.
+  \item \textbf{EpochMonotone}: configuration epochs never decrease.
+  \item \textbf{ValidTransitionsOnly}: $n \ge 4 \wedge n \bmod 3 = 1$.
+  \item \textbf{ConsistentMembershipView}: same-epoch replicas agree on~$V$.
+  \item \textbf{QCsAlwaysValid}: QC signers $\subseteq V$ at QC's epoch.
+\end{enumerate}
+
+\noindent Four additional invariants (\textbf{NoDoubleVote}, \textbf{UniqueHashes},
+\textbf{CommittedBlocksInTree}, \textbf{VotePoolSignersValid}) are also verified.
+
+\smallskip\noindent\textbf{TLC results:}\quad
+Exhaustive model checking explored \textbf{7.3\,M~distinct states} (20.5M~generated,
+depth~13) with \textbf{zero violations} across all 11~properties.  The
+\texttt{CommitBlock} action fired 35~times, confirming that the model reaches committed
+membership transitions ($3 \to 4$ via \texttt{JoinValidator}).
+
+%-----------------------------------------------------------------------------
+\section{Performance Comparison}
+\label{sec:performance}
+
+We compare \persisthotstuff{}'s measured performance against analytical models of
+PBFT~\cite{pbft1999} ($O(n^2)$ messages) and Raft~\cite{raft2014} ($O(n)$ messages,
+crash-fault only) at cluster sizes $n \in \{4, 7, 10, 13\}$, all valid under our
+$n \ge 4,\ n \bmod 3 = 1$ invariant.  For each size we run 20~trials measuring message
+count, commit latency, and throughput.
+
+\begin{table}[t]
+\caption{Message complexity per consensus round}
+\centering
+\begin{tabular}{ccccc}
+\toprule
+$n$ & $f_{\text{BFT}}$ & \textbf{PBFT} $2n^2{-}n$
+  & \textbf{Raft} $2(n{-}1)$ & \textbf{PHS} (measured) \\
+\midrule
+ 4 & 1 &  28 &  6 &  9 \\
+ 7 & 2 &  91 & 12 & 18 \\
+10 & 3 & 190 & 18 & 27 \\
+13 & 4 & 325 & 24 & 36 \\
+\bottomrule
+\end{tabular}
+\label{tab:messages}
+\end{table}
+
+\noindent Table~\ref{tab:messages} confirms that \persisthotstuff{} achieves $3(n{-}1)$
+messages per round, exactly the analytical HotStuff bound (proposal + votes + QC
+broadcast).  The persistence layer adds only local disk I/O, with no extra network
+messages.  At $n{=}13$, PBFT requires $9.0\times$ more messages (325 vs.\ 36), while Raft
+uses fewer messages (24) but tolerates only crash faults, not Byzantine faults.
+
+\noindent As $n$ grows from 4 to 13, PBFT messages grow $11.6\times$ (quadratic) while
+\persisthotstuff{} grows only $4.0\times$ (linear), matching Raft's scaling with strictly
+stronger Byzantine fault tolerance.
+
+\smallskip\noindent\textbf{Commit latency.}\quad
+\persisthotstuff{} commits every client command in exactly 3~rounds across all cluster
+sizes.  This is the theoretical minimum imposed by the 3-chain rule.  PBFT and Raft achieve
+single-round commits, but \persisthotstuff{} trades this small latency increase for its
+$O(n)$ message complexity advantage.
+
+\smallskip\noindent\textbf{Throughput.}\quad
+Steady-state throughput is 1.0~commits/round at all cluster sizes, confirming that the
+protocol sustains pipeline-depth-1 throughput without degradation as $n$ grows.
