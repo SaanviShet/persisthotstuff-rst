@@ -1,0 +1,697 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% PersistHotStuff — Springer Proceedings (svproc) Format
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\documentclass{SVProc}
+
+% ─── Packages ───────────────────────────────────────────────────────────────
+\usepackage{url}
+\def\UrlFont{\rmfamily}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric, chains, calc, fit, decorations.pathreplacing}
+\usepackage{enumitem}
+
+% ─── Hyperref Setup ─────────────────────────────────────────────────────────
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!70!black,
+  citecolor=green!50!black,
+  urlcolor=blue!60!black,
+}
+
+% ─── Custom Commands ────────────────────────────────────────────────────────
+\newcommand{\persisthotstuff}{\textsc{PersistHotStuff}}
+\newcommand{\hotstuff}{\textsc{HotStuff}}
+\newcommand{\bigO}[1]{\mathcal{O}(#1)}
+
+%=============================================================================
+\begin{document}
+\mainmatter
+
+\title{PersistHotStuff:\\ Designing a Practical Byzantine Fault Tolerant Consensus}
+
+\titlerunning{PersistHotStuff}
+
+\author{Saanvi Shet\inst{1} \and Tejas Kolhe\inst{1}}
+
+\authorrunning{S.\ Shet, T.\ Kolhe}
+
+\tocauthor{Saanvi Shet, Tejas Kolhe}
+
+\institute{Department of Computer Engineering,
+COEP Technological University, Pune, India\\
+\email{\{shetsr22.comp, kolhetv22.comp\}@coeptech.ac.in}}
+
+\maketitle
+
+%=============================================================================
+\begin{abstract}
+Building a working Byzantine Fault Tolerant(BFT) consensus system is harder than the theory
+suggests.  HotStuff~\cite{hotstuff2019} offers an elegant $O(n)$
+protocol with a clean 3-chain commit rule, yet every prototype we
+studied; and the Stanford CS244B report~\cite{stanford_hotstuff2024}
+confirms this; shares the same blind spots: no crash-safe storage,
+fixed validator sets, a toy state machine, and a pacemaker that stalls
+when clients go quiet.  We set out to close these gaps.
+\textit{PersistHotStuff} is our Rust-based framework built around four
+proposed extensions to HotStuff: a WAL-and-snapshot persistence layer,
+consensus-driven dynamic membership, a gRPC-backed pluggable state
+machine interface, and a pacemaker that injects dummy blocks to keep the 3-chain moving.
+We provide a TLA+ specification of the dynamic membership protocol,
+verified by TLC model checking across 7.3\,million distinct states with zero
+violations of 11~safety invariants, and benchmark the system against
+analytical models of PBFT and Raft, confirming $O(n)$ message complexity
+with $9\times$ fewer messages than PBFT at $n{=}13$.
+
+\keywords{Byzantine Fault Tolerance, HotStuff, Distributed Consensus, Persistence, Dynamic Membership, TLA+, Formal Verification, Rust}
+
+\end{abstract}
+
+%=============================================================================
+\section{Introduction}
+\label{sec:introduction}
+
+Anyone who has tried to turn a BFT consensus paper into running code knows the frustration: the protocol itself may be clean, but everything around it, like storage, configuration changes, application hooks and keeping the system alive when nobody is sending requests, gets hand-waved away. HotStuff~\cite{hotstuff2019} is a good example. On paper it is one of the tidiest BFT protocols available: $O(n)$ messages per decision, optimistic responsiveness, and a 3-chain commit rule that is easy to reason about. Meta trusted it enough to use it as the consensus engine for Diem. But what about the publicly available prototypes? They crash and lose everything. They assume that the validator set never changes. They hard-code
+a trivial state machine, and if clients stop sending requests for a while, the protocol stalls.
+
+We are not the first to notice.  A recent Stanford CS244B course
+report~\cite{stanford_hotstuff2024} catalogued exactly these four pain points after the authors tried to build a working HotStuff system from scratch.
+
+\begin{enumerate}
+  \item[1.] \textbf{No persistence.}  State lives in RAM.  Kill a
+    replica and it forgets everything, including but not limited to committed blocks, votes, and quorum. 
+  \item[2.] \textbf{Static membership.}  The validator set is baked in at startup. If a fifth node needs to be added, we would need to restart the whole cluster.
+  \item[3.] \textbf{Hard-coded state machine.}  The ``application'' is usually an append-only log with no hooks for real business logic.
+  \item[4.] \textbf{Liveness stalls under low load.}  The 3-chain
+    rule needs three consecutive justified blocks.  No client requests means no new blocks, which means nothing ever commits.
+\end{enumerate}
+
+We started this project because we wanted a HotStuff implementation
+that addresses all four issues in one coherent system. The result is \textit{PersistHotStuff}, whose design proposal we will present here, backed by implementation in Rust\cite{rust-implementation}.
+
+
+Our contributions, then, are:
+\begin{itemize}
+  \item A \textbf{Persistence layer} made up of Write Ahead Logs(WAL) + snapshots adapted from Raft~\cite{raft2014} to the Byzantine setting.
+  \item A \textbf{feature for dynamic membership} via
+    consensus-driven reconfiguration commands.
+  \item A \textbf{pluggable state machine interface}
+    (trait-based, with gRPC for out-of-process applications).
+  \item A \textbf{pacemaker design} that uses dummy proposals to keep
+    the 3-chain growing during idle periods.
+  \item An \textbf{open-source Rust codebase} with Ed25519
+    authentication, a simulation framework, and preliminary test
+    results.
+\end{itemize}
+
+%=============================================================================
+\section{Background}
+\label{sec:background}
+
+\subsection{System Model}
+
+We assume the standard partially synchronous model of Dwork
+et~al.~\cite{dls1988}: $n$ replicas, up to $f$ of which may be
+Byzantine (arbitrary behaviour, including collusion), with
+$n \ge 3f{+}1$.  Messages are eventually delivered once the network
+stabilises, but there are no guarantees during asynchronous periods.
+This model is the baseline for most modern BFT work, including
+HotStuff, so we adopt it without modification.
+
+\smallskip\noindent\textbf{Cluster-size restriction.}\quad
+While the general BFT lower bound is $n \ge 3f{+}1$,
+PersistHotStuff additionally requires $n \equiv 1 \pmod{3}$,
+yielding valid cluster sizes $n \in \{4, 7, 10, 13, \ldots\}$.  For any
+such $n$ the fault threshold is exactly $f = (n{-}1)/3$, so the
+condition collapses to a tight equality $n = 3f{+}1$ rather than a
+lower bound.
+
+\subsection{How HotStuff Works}
+
+We briefly recap the mechanics since our design builds directly on
+them.  HotStuff~\cite{hotstuff2019} runs in \emph{views}.  Each view
+has a leader who does three things: proposes a block which contains the command that needs to be executed, collects at least $2f{+}1$ signed votes into a Quorum Certificate(QC), and broadcasts the QC. Safety comes from the \emph{3-chain commit rule}: a block~$B_0$ is considered committed only when there is a chain
+$B_0 \leftarrow B_1 \leftarrow B_2$ in which both $B_1$ and $B_2$
+carry valid QC's. Until that chain forms, $B_0$ is not executed.
+
+The protocol's appeal is its simplicity. Every decision costs $O(n)$
+messages (one broadcast from the leader, $n{-}1$ votes back, one QC
+broadcast). If the leader is honest and the network is behaving, the
+system moves at actual network speed rather than waiting for timeouts.
+Fig.~\ref{fig:3chain_commit} illustrates the 3-chain structure.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\tikzstyle{block}=[rectangle, draw, fill=blue!20, text width=1.4cm,
+  text centered, minimum height=0.8cm, font=\footnotesize]
+\tikzstyle{qc}=[rectangle, draw, fill=green!20, text width=1.2cm,
+  text centered, minimum height=0.6cm, font=\scriptsize]
+\tikzstyle{arrow}=[->, thick]
+
+\node (B0) at (0,0)   [block] {$B_0$};
+\node (B1) at (2.5,0) [block] {$B_1$};
+\node (B2) at (5,0)   [block] {$B_2$};
+\node (B3) at (7.5,0) [block] {$B_3$};
+
+\node (QC1) at (2.5,-1.3) [qc] {QC($B_1$)};
+\node (QC2) at (5,-1.3)   [qc] {QC($B_2$)};
+\node (QC3) at (7.5,-1.3) [qc] {QC($B_3$)};
+
+\draw [arrow] (B0) -- (B1);
+\draw [arrow] (B1) -- (B2);
+\draw [arrow] (B2) -- (B3);
+\draw [arrow, dashed] (QC1) -- (B1);
+\draw [arrow, dashed] (QC2) -- (B2);
+\draw [arrow, dashed] (QC3) -- (B3);
+
+\node[font=\scriptsize] at (0,   1.2) {Committed};
+\draw [decorate,decoration={brace,amplitude=4pt},thick,yshift=3pt]
+  (B0.north west) -- (B0.north east);
+\node[font=\scriptsize] at (2.5, 1.2) {Pre-Committed};
+\draw [decorate,decoration={brace,amplitude=4pt},thick,yshift=3pt]
+  (B1.north west) -- (B1.north east);
+\node[font=\scriptsize] at (5,   1.2) {Pre-Prepared};
+\draw [decorate,decoration={brace,amplitude=4pt},thick,yshift=3pt]
+  (B2.north west) -- (B2.north east);
+\node[font=\scriptsize] at (7.5, 1.2) {Prepared};
+\draw [decorate,decoration={brace,amplitude=4pt},thick,yshift=3pt]
+  (B3.north west) -- (B3.north east);
+
+\node[font=\scriptsize] at (3.75, -2.2)
+  {$B_0$ commits once $B_0 \leftarrow B_1 \leftarrow B_2$
+   are all QC-justified};
+\end{tikzpicture}
+\caption{The 3-chain commit rule.  $B_0$ is only safe to commit once two
+  successive QC-justified blocks extend it.}
+\label{fig:3chain_commit}
+\end{figure}
+
+%=============================================================================
+\section{Related Work}
+\label{sec:related_work}
+
+It helps to understand what each related system does well and where it
+stops short, since our design borrows selectively from several of them.
+
+Practical Byzantine Fault Tolerance(PBFT)~\cite{pbft1999} proved that practical BFT was possible, but its $O(n^2)$ all-to-all communication makes it painful beyond a couple of dozen nodes.  HotStuff~\cite{hotstuff2019} brought that down to $O(n)$ by funnelling everything through a leader and using QC's.  More recent variants such as HotStuff-1~\cite{hotstuff1_2024} tries to cut one communication phase, and Sync HotStuff~\cite{synchotstuff2020} gets better throughput when the network is synchronous by focusing on squeezing
+out better latency or throughput from the core protocol. None of them tackle the four practical gaps we are interested in.
+
+For persistence, the closest analogue is Raft~\cite{raft2014}.  Its WAL-plus-snapshot approach has been tested in systems such as etcd, and the recovery semantics are well understood. The catch is that Raft assumes only crash faults; transplanting its storage patterns into a Byzantine setting requires some care. For instance, a recovering replica cannot just trust its own log, it needs checksum verification and must re-validate against the quorum.
+
+DynaNet~\cite{dynanet2025} is one of the few BFT systems that
+explicitly supports dynamic validator sets.  Our membership module takes a simpler route: we treat \texttt{JOIN} and \texttt{REMOVE} as regular consensus commands so that the existing 3-chain commit rule provides the atomicity guarantee for free.
+
+Tendermint~\cite{tendermint} deserves credit for popularising the idea of separating consensus from application logic through its ABCI. However, its main focus is on decentralised apps(dApps). Our \texttt{App} trait and gRPC interface borrow this philosophy directly and apply it to applications in general. We have targeted a Rust-native trait as the primary interface, with gRPC as an optional bridge for applications written in other languages.
+
+As for liveness, the idea of injecting no-op commands when the system is idle goes back to early Paxos literature. We are not claiming novelty there, just noting that nobody seems to have wired it into a HotStuff pacemaker properly.
+
+%=============================================================================
+\section{System Design}
+\label{sec:system_design}
+
+Our design is modular by necessity. Each of the four issues touches a different part of the system, so we treat them as separate modules that plug into a shared consensus core.
+Fig.~\ref{fig:architecture} shows how the pieces fit together.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[node distance=1.5cm, auto]
+\tikzstyle{module}=[rectangle, draw, fill=blue!10, text width=2.8cm,
+  text centered, minimum height=1.2cm, rounded corners,
+  font=\footnotesize]
+\tikzstyle{core}=[rectangle, draw, fill=red!10, text width=3.2cm,
+  text centered, minimum height=1.5cm, rounded corners, very thick,
+  font=\footnotesize]
+\tikzstyle{interface}=[rectangle, draw, fill=green!10, text width=2cm,
+  text centered, minimum height=0.8cm, font=\scriptsize]
+\tikzstyle{arrow}=[->, thick]
+
+\node (core) [core]
+  {\textbf{Consensus Core}\\(HotStuff + Pacemaker)};
+\node (persistence) [module, left of=core, xshift=-2.5cm]
+  {Persistence\\(WAL + Snapshots)};
+\node (membership) [module, right of=core, xshift=2.5cm]
+  {Dynamic\\Membership};
+\node (app_interface) [module, below of=core, yshift=-1.5cm]
+  {Pluggable SM\\(Trait / gRPC)};
+\node (liveness) [module, above of=core, yshift=1.5cm]
+  {Enhanced\\Pacemaker};
+
+\draw [arrow] (persistence) -- (core);
+\draw [arrow] (core) -- (membership);
+\draw [arrow] (core) -- (app_interface);
+\draw [arrow] (liveness) -- (core);
+
+\node (client) [interface, below of=persistence, yshift=-0.5cm]
+  {Clients};
+\node (application) [interface, below of=membership, yshift=-0.5cm]
+  {External App};
+
+\draw [arrow] (client) -- (persistence);
+\draw [arrow] (app_interface.east) -| (application);
+\end{tikzpicture}
+\caption{High-level architecture.  Solid arrows show data flow}
+\label{fig:architecture}
+\end{figure}
+
+%-----------------------------------------------------------------------------
+\subsection{Persistence Layer (WAL + Snapshots)}
+\label{sec:persistence}
+
+The idea is to write every state-changing event to an append-only log \emph{before} updating the in-memory state, and periodically take a full snapshot so the log can be truncated.  What makes the Byzantine setting different is that a
+recovering replica cannot blindly trust what it reads off disk.  A corrupted disk block or a Byzantine operator who tampered with the log file must be detected, not silently absorbed. So every WAL entry carries a CRC32 checksum, and the file header includes a SHA-256 digest of its own fields.
+
+Tables~\ref{tab:wal-header} and~\ref{tab:wal-entry} show the binary layout. We keep it simple; there is no need for a complex log-structured storage engine here; since the WAL is strictly append-only and reads happen only during recovery. The size mentioned in~\ref{tab:wal-header} is in bytes.
+
+\begin{table}[t]
+\centering
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.05}
+\begin{tabular}{r r l p{4.5cm}}
+\hline
+\textbf{Offset} & \textbf{Size} & \textbf{Field} & \textbf{Description} \\
+\hline
+0  & 4  & Magic Number    & 0x48534C57 (``HSLW'') \\
+4  & 2  & Version         & Format version (currently 0x0001) \\
+6  & 8  & Replica ID      & Owner of this log \\
+14 & 8  & Created Time    & Unix timestamp (ms) \\
+22 & 32 & Header Checksum & SHA-256 over the preceding fields \\
+\hline
+\end{tabular}
+\caption{WAL file header layout}
+\label{tab:wal-header}
+\end{table}
+
+\begin{table}[t]
+\centering
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.1}
+\begin{tabular}{|p{8cm}|}
+\hline
+\centering \textbf{Entry Frame} \\
+\hline
+Length (4\,B) \quad CRC32 (4\,B) \quad Payload (variable) \\
+\hline
+\end{tabular}
+\newline
+\caption{Each WAL entry is length-prefixed and checksummed.}
+\label{tab:wal-entry}
+\end{table}
+
+Every entry is \texttt{fsync}'d before the corresponding in-memory update proceeds. This means a crash at any point leaves the log in a recoverable state: either the entry was fully written (and its checksum will match), or it was not (and recovery will detect the truncation).
+
+\smallskip\noindent\textbf{Snapshots.}\quad
+If left unchecked, the WAL would grow without bound. We take a snapshot every $N$ committed commands ($N{=}1000$ in our tests) capturing the block tree, committed log, \texttt{high\_qc}, and eventually the application state. Once a snapshot succeeds, all WAL entries before its sequence number can be safely deleted.  Snapshots are serialised with \texttt{bincode} via \texttt{serde}, which gives us compact binary output without the overhead of a text format.
+
+\smallskip\noindent\textbf{Recovery.}\quad
+The procedure is straightforward (Algorithm~\ref{alg:wal_recovery}): load the most recent snapshot, replay any WAL entries that came after it, verify each entry's checksum, and rejoin the protocol. If a checksum fails, the replica halts rather than risk operating on a corrupted state; this is a deliberate choice. In a Byzantine setting
+It is better to stop and ask for help than to silently diverge from the rest of the quorum.
+
+\begin{algorithm}[t]
+\caption{Recovery from snapshot + WAL}
+\label{alg:wal_recovery}
+\begin{algorithmic}[1]
+\REQUIRE Snapshot store, WAL store
+\ENSURE Recovered replica state
+    \STATE $\textit{snap} \gets \textsc{LoadSnapshot}()$
+    \STATE $\textit{state} \gets \textsc{Restore}(\textit{snap})$
+    \STATE $\textit{entries} \gets \textsc{LoadWAL}(\textit{snap.seqNo})$
+    \FORALL{$\textit{entry} \in \textit{entries}$}
+        \IF{$\textsc{VerifyCRC}(\textit{entry})$}
+            \STATE $\textsc{Apply}(\textit{state}, \textit{entry})$
+        \ELSE
+            \STATE \textbf{halt} with error
+        \ENDIF
+    \ENDFOR
+    \RETURN \textit{state}
+\end{algorithmic}
+\end{algorithm}
+
+%-----------------------------------------------------------------------------
+\subsection{Dynamic Membership}
+\label{sec:membership}
+
+Static validator sets are a real operational headache. If a node dies permanently, you are stuck with reduced capacity. If you want to scale up, you need to restart everyone.  We propose handling membership changes \emph{through the consensus protocol itself}, which avoids introducing a separate coordination mechanism.
+
+The idea is simple enough: a \texttt{JoinValidator} or \texttt{RemoveValidator} command is included in a block like any other client request. It flows through proposal, voting, and QC formation normally. The membership change only takes effect once the enclosing block is committed via the 3-chain rule. This gives us atomicity for free; either the change commits or
+It does not; and all honest replicas agree on which blocks were committed.
+
+For joins, the new replica would need to catch up by downloading the latest snapshot and replaying subsequent WAL entries from an existing peer. For removals, the departing replica simply stops participating after the commit.
+
+One subtlety we want to flag: quorum intersection across
+configurations. In a single configuration, any two quorums of size $2f{+}1$ out of $3f{+}1$ must overlap in at least one honest replica. When the configuration changes, we need to make sure decisions made under the old quorum are respected by the new one. Our approach is to apply the change atomically \emph{after} commitment, so the finalised chain prefix is locked in under the old configuration's quorum rules before the new configuration activates.  We formally verify this property and six additional membership safety invariants via exhaustive TLC model checking(see Section~\ref{sec:formal_verification}).
+
+%-----------------------------------------------------------------------------
+\subsection{Pluggable State Machine}
+\label{sec:pluggable_sm}
+
+Most HotStuff prototypes just append commands to a log and call it a day. We want the consensus layer to be oblivious to what it is ordering. Whether it is a key-value store, a counter, a blockchain ledger, whatever the application needs.
+
+Our design defines a Rust \texttt{App} trait with three methods:
+\texttt{apply(cmd)} to execute a command, \texttt{snapshot()} to
+capture application state, and \texttt{restore(state)} to rebuild it. This is directly inspired by Tendermint's ABCI~\cite{tendermint}; we make no claim of novelty on the interface itself. The value is in integrating it cleanly with the WAL/snapshot machinery described above.
+
+For applications that are not written in Rust, we plan to expose the same three operations over gRPC~\cite{grpc}: an \texttt{Execute} RPC replaces \texttt{apply}, and \texttt{Snapshot}/\\\texttt{Restore} RPCs handle state persistence/safety.  We have also considered WASM as an alternative
+for sandboxing untrusted plugins, though that remains speculative at this point.
+
+%-----------------------------------------------------------------------------
+\subsection{Enhanced Pacemaker}
+\label{sec:pacemaker}
+
+The liveness problem under low load is subtle but annoying. Say a client submits one command. The leader wraps it in a block and gets a QC. However, the 3-chain rule means that the block will not commit until two more QC-justified blocks appear after it.  If no more client commands arrive, those blocks never get proposed, and the original command sits in limbo indefinitely.
+
+Our fix is for the pacemaker to monitor two conditions: (a) has it been longer than \texttt{timeout\_ms} since the last proposal? and (b) are there fewer than three pending blocks?  If both hold and the client queue is empty, the leader proposes a \emph{dummy block}; a block with a no-op command.  Dummies go through the full consensus path (proposal, vote, QC) and fill out the 3-chain. At the application layer, they are
+simply ignored.
+
+Focus is wiring it into HotStuff's pacemaker correctly so that (a)~dummies do not starve real commands, and (b)~the commit latency for a single command is bounded by roughly $3 \times \textit{timeout}$.
+
+%-----------------------------------------------------------------------------
+\subsection{Consensus Core}
+
+The algorithm for the core consensus protocol was mentioned in Section~\ref{sec:background}. Given below are the core data structures used to implement it.
+\subsubsection{Blocks and the Block Tree.}
+Each block is a tuple $B = \langle \mathit{hash}, \mathit{parent}, \mathit{view}, \\ \mathit{proposer}, \mathit{qc}, \mathit{cmds} \rangle$.
+Blocks form a tree rooted at a genesis block; we store it as a
+\texttt{BTreeMap<Hash, Block>} for $O(\log n)$ lookups.
+
+\subsubsection{Cryptographic Authentication.}
+We use Ed25519~\cite{ed25519} throughout.  Each replica generates its own signing key at startup and publishes the corresponding verifying key to all peers. Votes are signed over
+$\texttt{SHA-256}(\mathit{block\_hash} \| \mathit{view})$, and a QC requires $\ge 2f{+}1$ valid signatures from distinct replicas.  We chose Ed25519 over, say, Boneh–Lynn–Shacham(BLS) because it is fast, widely supported, and the \texttt{ed25519-dalek} crate is mature.
+
+\subsubsection{Voting and QC Formation.}
+A replica votes for a proposal if: the proposer is the legitimate
+leader for that view, the parent block exists locally, and any embedded QC verifies. We also reject duplicate votes; same signer, same block. Once the leader accumulates $\ge 2f{+}1$ valid votes, it assembles a QC.
+
+\subsubsection{Commit Rule.}
+Algorithm~\ref{alg:commit} formalises what happens: for every
+uncommitted block $B_0$, we look for a child $B_1$ and a grandchild $B_2$, both QC-justified.  If the chain exists, $B_0$ commits. In practice, commits happen at the speed of proposal rounds.
+
+\begin{algorithm}[t]
+\caption{3-chain commit detection}
+\label{alg:commit}
+\begin{algorithmic}[1]
+\REQUIRE Block tree $\mathcal{T}$, committed set $\mathcal{C}$
+\ENSURE Updated $\mathcal{C}$
+\FORALL{$B_0 \in \mathcal{T} \setminus \mathcal{C}$}
+    \STATE $B_1 \gets \textsc{Child}(\mathcal{T}, B_0)$
+    \IF{$B_1 = \bot$ \textbf{or} $B_1.\mathit{qc} = \bot$}
+        \STATE \textbf{continue}
+    \ENDIF
+    \STATE $B_2 \gets \textsc{Child}(\mathcal{T}, B_1)$
+    \IF{$B_2 = \bot$ \textbf{or} $B_2.\mathit{qc} = \bot$}
+        \STATE \textbf{continue}
+    \ENDIF
+    \STATE $\mathcal{C} \gets \mathcal{C} \cup \{B_0\}$
+\ENDFOR
+\RETURN $\mathcal{C}$
+\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Leader Rotation.}
+Nothing fancy: $\textit{leader}(v) = v \bmod n$.  If a view times out, replicas increment their view number and move on.  We may explore reputation-based rotation later, but round-robin is fine for now.
+
+
+%=============================================================================
+\section{Evaluation}
+\label{sec:evaluation}
+
+We evaluate PersistHotStuff on three axes: correctness under adversarial
+conditions (simulation and stress tests), formal safety verification of
+dynamic membership (TLA+ model checking), and comparative performance
+against PBFT and Raft.
+
+\subsection{Simulation Results}
+
+Table~\ref{tab:simulation_results} summarises multi-replica simulations
+($n{=}4$, $f{=}1$).  The key finding is
+\textbf{zero safety violations} across all scales; the 2--5 block gap
+between proposed and committed counts reflects the trailing 3-chain.
+
+\begin{table}[t]
+\caption{Simulation results ($n{=}4$, $f{=}1$, single-process)}
+\centering
+\begin{tabular}{ccccc}
+\toprule
+\textbf{Rounds} & \textbf{Proposed} & \textbf{Committed}
+  & \textbf{Messages} & \textbf{Safety Viol.} \\
+\midrule
+100  & 100  & 97  & 800  & 0 \\
+500  & 500  & 495 & 4000 & 0 \\
+1000 & 1000 & 998 & 8000 & 0 \\
+\bottomrule
+\end{tabular}
+\label{tab:simulation_results}
+\end{table}
+
+\subsection{Stress Testing}
+
+\noindent\textbf{Crash recovery.}\quad
+We ran 120 consecutive kill/restart cycles ($n{=}4$, $f{=}1$), recovering
+each victim from its most recent snapshot plus WAL replay.
+All \textbf{120/120} recoveries succeeded with \textbf{zero safety violations};
+844~blocks committed ($\approx$7.0 per cycle).
+
+\smallskip\noindent\textbf{Dynamic membership.}\quad
+Table~\ref{tab:membership} summarises 35~membership-change scenarios.
+Valid transitions ($3{\to}4$, $5{\to}4$) commit via the 3-chain rule;
+invalid transitions ($4{\to}5$, $4{\to}3$) are rejected by the
+\texttt{can\_apply\_new\_validator\_count} invariant ($n \ge 4$,
+$n \bmod 3 = 1$).  All 35/35 pass with zero violations.
+
+\begin{table}[t]
+\caption{Dynamic membership evaluation (35 scenarios, 0 violations)}
+\centering
+\begin{tabular}{llcc}
+\toprule
+\textbf{Scenario} & \textbf{Transition} & \textbf{Runs} & \textbf{Pass} \\
+\midrule
+A -- Valid join       & $3 \to 4$          & 10 & 10 \\
+B -- Valid remove     & $5 \to 4$          & 10 & 10 \\
+C -- Reject bad join  & $4 \to 5$ (invalid)& 5  & 5  \\
+D -- Reject bad remove& $4 \to 3$ (invalid)& 5  & 5  \\
+E -- End-to-end cycle & $3{\to}4{\to}5$ (rejected)& 5  & 5  \\
+\bottomrule
+\end{tabular}
+\label{tab:membership}
+\end{table}
+
+\smallskip\noindent\textbf{Commit latency (pacemaker).}\quad
+Without the dummy-proposal pacemaker, 0/50 trials commit within 200~rounds
+(the 3-chain stalls).  With the pacemaker, all 50/50 commit in exactly
+3~rounds the theoretical minimum.
+
+%=============================================================================
+\subsection{Formal Verification of Dynamic Membership Safety}
+\label{sec:formal_verification}
+
+We developed a TLA+ specification~\cite{lamport2002tla+} that models the dynamic membership protocol. The specification captures the full consensus protocol extended with \texttt{JoinValidator} and \texttt{RemoveValidator} actions that modify the active validator set atomically at commit time.
+
+\smallskip\noindent\textbf{Model parameters:}\quad
+$N{=}4$ replicas (bootstrap set $\{0,1,2\}$ with one candidate), fault
+bound $f{=}0$ for the bootstrap configuration, $\text{MAX\_VIEW}{=}4$,
+$\text{MAX\_HASH}{=}9$, $\text{MAX\_EPOCH}{=}2$.
+
+\smallskip\noindent\textbf{Safety invariants verified:}\quad
+We specify seven membership-specific invariants plus four baseline
+consensus invariants, all checked by TLC:
+
+\begin{enumerate}[label=\textbf{\arabic*},leftmargin=*,nosep]
+  \item \textbf{ValidatorSetBFT}: $|V_r| \ge 3f{+}1$ post-activation.
+  \item \textbf{QuorumIntersection}: any two quorums of $V_r$ overlap.
+  \item \textbf{CommitSafetyAcrossEpochs}: no cross-epoch prefix contradictions.
+  \item \textbf{EpochMonotone}: configuration epochs never decrease.
+  \item \textbf{ValidTransitionsOnly}: $n \ge 4 \wedge n \bmod 3 = 1$.
+  \item \textbf{ConsistentMembershipView}: same-epoch replicas agree on~$V$.
+  \item \textbf{QCsAlwaysValid}: QC signers $\subseteq V$ at QC's epoch.
+\end{enumerate}
+
+\noindent Four additional invariants (\textbf{NoDoubleVote},
+\textbf{UniqueHashes}, \textbf{CommittedBlocksInTree},
+\textbf{VotePoolSignersValid}) are also verified.
+
+\smallskip\noindent\textbf{TLC results:}\quad
+Exhaustive model checking explored \textbf{7.3\,M~distinct states}
+(20.5M~generated, depth~13) with \textbf{zero violations} across all
+11~properties.  The \texttt{CommitBlock} action fired 35~times,
+confirming that the model reaches committed membership transitions
+($3 \to 4$ via \texttt{JoinValidator}).
+
+\subsection{Performance Comparison}
+\label{sec:performance}
+
+We compare PersistHotStuff's measured performance against analytical
+models of PBFT~\cite{pbft1999} ($O(n^2)$ messages) and
+Raft~\cite{raft2014} ($O(n)$ messages, crash-fault only) at cluster
+sizes $n \in \{4, 7, 10, 13\}$ all valid under our
+$n \ge 4,\ n \bmod 3 = 1$ invariant.  For each size we run 20~trials
+measuring message count, commit latency, and throughput.
+
+\begin{table}[t]
+\caption{Message complexity per consensus round}
+\centering
+\begin{tabular}{ccccc}
+\toprule
+$n$ & $f_{\text{BFT}}$ & \textbf{PBFT} $2n^2{-}n$
+  & \textbf{Raft} $2(n{-}1)$ & \textbf{PHS} (measured) \\
+\midrule
+ 4 & 1 &  28 &  6 &  9 \\
+ 7 & 2 &  91 & 12 & 18 \\
+10 & 3 & 190 & 18 & 27 \\
+13 & 4 & 325 & 24 & 36 \\
+\bottomrule
+\end{tabular}
+\label{tab:messages}
+\end{table}
+
+\noindent Table~\ref{tab:messages} confirms that PersistHotStuff achieves
+$3(n{-}1)$ messages per round, exactly the analytical HotStuff bound
+(proposal + votes + QC broadcast). The persistence layer adds only
+local disk I/O, no extra network messages.  At $n{=}13$, PBFT requires
+$9.0\times$ more messages (325 vs.\ 36), while Raft uses fewer messages
+(24) but tolerates only crash faults, not Byzantine faults.
+
+\noindent As $n$ grows from 4 to 13, PBFT messages grow $11.6\times$
+(quadratic) while PersistHotStuff grows only $4.0\times$ (linear),
+matching Raft's scaling with strictly stronger Byzantine fault tolerance.
+
+\smallskip\noindent\textbf{Commit latency:}\quad
+PersistHotStuff commits every client command in exactly 3~rounds across
+all cluster sizes.  This is the
+theoretical minimum imposed by the 3-chain rule.  PBFT and Raft achieve
+single-round commits, but PersistHotStuff trades this small latency
+increase for its $O(n)$ message complexity advantage.
+
+\smallskip\noindent\textbf{Throughput:}\quad
+Steady-state throughput is 1.0~commits/round at all cluster sizes,
+confirming that the protocol sustains pipeline-depth-1 throughput
+without degradation as $n$ grows.
+
+%=============================================================================
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Design Trade-offs}
+
+\begin{itemize}
+  \item \textbf{In-memory block tree.}  We keep the entire block tree in RAM, which is fine for thousands of blocks but will not scale to millions. A natural extension is to page older blocks to disk, using the WAL infrastructure that already exists.
+  \item \textbf{Consensus-driven membership.}  Routing membership
+    changes through the consensus log is simple but introduces latency(the change only takes effect after 3-chain commit).  Systems that need rapid reconfiguration might prefer a separate fast path.
+  \item \textbf{No threshold signatures.}  QCs in our system carry $2f{+}1$ individual Ed25519 signatures, which grows linearly in $f$.Threshold (or aggregate) signatures could compress a QC into a single short proof but add cryptographic complexity. We defer this optimisation to future work.
+\end{itemize}
+
+\subsection{Safety and Liveness}
+
+\textit{Safety.} The consensus core follows HotStuff's 3-chain commit rule without modification, so the original safety proof~\cite{hotstuff2019} applies.  The WAL and snapshots add durability but do not change when or how blocks are committed.  Dummy proposals are regular blocks that carry no-op commands; they pass through the same voting and QC pipeline, so they cannot weaken safety. For dynamic membership, our TLA+ specification (Section~\ref{sec:formal_verification}) provides machine-checked verification.
+
+\textit{Liveness.}  HotStuff guarantees liveness after Global Stabilisation Time(GST) assuming an honest leader. Our pacemaker extension adds liveness under low load by ensuring the 3-chain always has enough blocks to make progress. For dynamic membership, liveness depends on the new configuration having enough honest replicas, which is enforced by the $n' \ge 4 \wedge n' \bmod 3 = 1$ invariant.
+
+
+
+%=============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+We have presented the design and evaluation of PersistHotStuff, a modular framework that closes four practical gaps in existing HotStuff prototypes: crash-safe persistence, dynamic membership, pluggable application logic, and liveness under low load.
+
+All four extensions are fully implemented and rigorously tested in Rust.  Beyond simulation and stress testing, we provide two new contributions that strengthen the paper's technical foundation:
+\begin{itemize}[itemsep=2pt]
+  \item A TLA+ specification of the dynamic membership protocol, verified by TLC across 7.3\,M~distinct states with zero violations of 11~safety invariants; including quorum intersection, commit safety across epochs, and valid transition enforcement.
+  \item A performance benchmark at cluster sizes $n \in \{4, 7, 10, 13\}$ confirming $O(n)$ message complexity ($3(n{-}1)$ messages/round, matching the analytical HotStuff bound) and demonstrating $9.0\times$ fewer messages than PBFT at $n{=}13$.
+\end{itemize}
+The implementation is available on GitHub~\cite {rust-implementation}.
+If there is one takeaway, it is that the gap between a BFT
+\emph{protocol} and a BFT \emph{system} is larger than it looks.
+Storage, membership, application interfaces, and liveness under real workloads all matter, and addressing them together rather than one at a time forces design decisions that would not surface otherwise.  We hope this blueprint is useful to others working in the same space.
+
+%=============================================================================
+\begin{thebibliography}{12}
+
+\bibitem{hotstuff2019}
+Yin, M., Malkhi, D., Reiter, M.K., Gueta, G.G., Abraham, I.:
+HotStuff: BFT Consensus in the Lens of Blockchain.
+In: Proc.\ ACM PODC (2019).
+\url{https://arxiv.org/abs/1803.05069}
+
+\bibitem{pbft1999}
+Castro, M., Liskov, B.:
+Practical Byzantine Fault Tolerance.
+In: Proc.\ 3rd USENIX OSDI, pp.~173--186 (1999).
+\url{https://css.csail.mit.edu/6.824/2014/papers/castro-practicalbft.pdf}
+
+\bibitem{raft2014}
+Ongaro, D., Ousterhout, J.K.:
+In Search of an Understandable Consensus Algorithm.
+In: Proc.\ USENIX ATC, pp.~305--320 (2014).
+\url{https://raft.github.io/raft.pdf}
+
+\bibitem{hotstuff1_2024}
+Kang, D.\ et al.:
+HotStuff-1: Linear Consensus with One-Phase Speculation.
+arXiv:2408.04728 (2024).
+\url{https://arxiv.org/pdf/2408.04728}
+
+\bibitem{synchotstuff2020}
+Abraham, I., Malkhi, D., Nayak, K., Ren, L., Yin, M.:
+Sync HotStuff: Simple and Practical Synchronous State Machine
+Replication.
+In: Proc.\ IEEE S\&P (2020)
+\url{https://ieeexplore.ieee.org/document/9152792}
+
+\bibitem{dynanet2025}
+Guo, H.\ et al.:
+DynaNet: A Dynamic BFT Consensus Framework.
+J.\ Systems Architecture (2025).
+\url{https://www.sciencedirect.com/science/article/abs/pii/S138376212500058X}
+
+\bibitem{stanford_hotstuff2024}
+Stanford CS244B:
+HotStuff Implementation and Advice.
+Course Project Report, Spring 2024.
+\url{https://www.scs.stanford.edu/24sp-cs244b/projects/HotStuff_Implementation_and_Advice.pdf}
+
+\bibitem{tendermint}
+Kwon, J.:
+Tendermint: Consensus Without Mining (2014).
+\url{https://tendermint.com/static/docs/tendermint.pdf}
+
+\bibitem{grpc}
+gRPC: A High Performance, Open Source Universal RPC Framework.
+\url{https://grpc.io/}
+
+\bibitem{dls1988}
+Dwork, C., Lynch, N., Stockmeyer, L.:
+Consensus in the Presence of Partial Synchrony.
+J.\ ACM \textbf{35}(2), 288--323 (1988)
+\url{https://dl.acm.org/doi/epdf/10.1145/42282.42283}
+
+\bibitem{ed25519}
+Brendel, J., Cremers, C., Jackson, D., Zhao, M.:
+The Provable Security of Ed25519: Theory and Practice (2021).
+\url{https://ieeexplore.ieee.org/document/9519456}
+
+\bibitem{lamport2002tla+}
+Chaudhuri, K., Doligez, D., Lamport, L., Merz, S.:
+A TLA+ Proof System.
+In: CEUR Workshop Proceedings (2008).
+\url{https://www.researchgate.net/publication/220896380_A_TLA_proof_system}
+
+\bibitem{rust-implementation}
+Saanvi S., Tejas K.: 
+persisthotstuff-rst
+\url{https://github.com/SaanviShet/persisthotstuff-rst}
+
+\end{thebibliography}
+
+\end{document}

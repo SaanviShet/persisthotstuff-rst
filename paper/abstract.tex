@@ -1,0 +1,29 @@
+%_____________________________________________________________________________________________ 
+% Abstract
+%_____________________________________________________________________________________________ 
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+Building a working Byzantine Fault Tolerant (BFT) consensus system is harder than the theory
+suggests.  HotStuff~\cite{hotstuff2019} offers an elegant $O(n)$
+protocol with a clean 3-chain commit rule, yet every prototype we
+studied---and the Stanford CS244B report~\cite{stanford_hotstuff2024}
+confirms this---shares the same blind spots: no crash-safe storage,
+fixed validator sets, a toy state machine, and a pacemaker that stalls
+when clients go quiet.  We set out to close these gaps.
+
+\textit{PersistHotStuff} is our Rust-based framework built around four
+proposed extensions to HotStuff: a WAL-and-snapshot persistence layer,
+consensus-driven dynamic membership, a gRPC-backed pluggable state
+machine interface, and a pacemaker that injects dummy blocks to keep
+the 3-chain moving.
+We provide a TLA+ specification of the dynamic membership protocol,
+verified by TLC model checking across 7.3\,million distinct states with
+zero violations of 11~safety invariants, and benchmark the system
+against analytical models of PBFT and Raft, confirming $O(n)$ message
+complexity with $9\times$ fewer messages than PBFT at $n{=}13$.
+
+\smallskip
+\noindent\textbf{Keywords:}
+Byzantine Fault Tolerance, HotStuff, Distributed Consensus, Persistence,
+Dynamic Membership, TLA+, Formal Verification, Rust.

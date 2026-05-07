@@ -37,6 +37,12 @@ fn mk_replica(config: Config, keystore: KeyStore, validators: BTreeSet<u64>, epo
         keystore,
         wal: None,
         snapshot_counter: 0,
+        app: None,
+        pending_app_state: None,
+        client_queue: Vec::new(),
+        dummy_proposal_enabled: false,
+        last_proposed_time: 0,
+        dummy_timeout_ms: 0,
     }
 }
 

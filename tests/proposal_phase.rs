@@ -27,6 +27,12 @@ fn leader_proposes_block() {
         keystore: keystores[1].clone(),  // Use the keystore for replica id=1
         wal: None,
         snapshot_counter: 0,
+        app: None,
+        pending_app_state: None,
+        client_queue: Vec::new(),
+        dummy_proposal_enabled: false,
+        last_proposed_time: 0,
+        dummy_timeout_ms: 0,
     };
 
     let block_opt = replica.propose(1);
@@ -59,6 +65,12 @@ fn non_leader_cannot_propose() {
         keystore: keystores[0].clone(),  // Use the keystore for replica id=0
         wal: None,
         snapshot_counter: 0,
+        app: None,
+        pending_app_state: None,
+        client_queue: Vec::new(),
+        dummy_proposal_enabled: false,
+        last_proposed_time: 0,
+        dummy_timeout_ms: 0,
     };
 
     assert!(replica.propose(1).is_none());
@@ -87,6 +99,12 @@ fn proposal_validation_accepts_valid() {
         keystore: keystores[1].clone(),  // Use the keystore for replica id=1
         wal: None,
         snapshot_counter: 0,
+        app: None,
+        pending_app_state: None,
+        client_queue: Vec::new(),
+        dummy_proposal_enabled: false,
+        last_proposed_time: 0,
+        dummy_timeout_ms: 0,
     };
 
     let follower_cfg = Config { n: 4, f: 1, id: 2, timeout_ms: 5000 };
@@ -106,6 +124,12 @@ fn proposal_validation_accepts_valid() {
         keystore: keystores[2].clone(),
         wal: None,
         snapshot_counter: 0,
+        app: None,
+        pending_app_state: None,
+        client_queue: Vec::new(),
+        dummy_proposal_enabled: false,
+        last_proposed_time: 0,
+        dummy_timeout_ms: 0,
     };
 
     let block = leader.propose(1).expect("leader should propose");
@@ -137,6 +161,12 @@ fn proposal_validation_rejects_invalid_qc() {
         keystore: keystores[1].clone(),
         wal: None,
         snapshot_counter: 0,
+        app: None,
+        pending_app_state: None,
+        client_queue: Vec::new(),
+        dummy_proposal_enabled: false,
+        last_proposed_time: 0,
+        dummy_timeout_ms: 0,
     };
 
     let follower_cfg = Config { n: 4, f: 1, id: 2, timeout_ms: 5000 };
@@ -156,6 +186,12 @@ fn proposal_validation_rejects_invalid_qc() {
         keystore: keystores[2].clone(),
         wal: None,
         snapshot_counter: 0,
+        app: None,
+        pending_app_state: None,
+        client_queue: Vec::new(),
+        dummy_proposal_enabled: false,
+        last_proposed_time: 0,
+        dummy_timeout_ms: 0,
     };
 
     // Create a block with a QC that has insufficient signatures

@@ -8,3 +8,5 @@ pub mod replica;
 pub mod visualiser;
 pub mod network;
 pub mod simulation;
+pub mod app;
+pub mod grpc;

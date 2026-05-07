@@ -164,6 +164,10 @@ pub struct Snapshot {
     /// The next hash counter so we don't reuse hash values after
     /// recovery.
     pub next_hash: Hash,
+
+    /// Opaque application state blob captured by `App::snapshot()`.
+    /// `None` when no application was attached.
+    pub app_state: Option<Vec<u8>>,
 }
 
 // ── Conversion helpers ───────────────────────────────────────────────────
@@ -251,6 +255,7 @@ impl Snapshot {
         committed_up_to: Option<Hash>,
         high_qc: Option<&QuorumCert>,
         next_hash: Hash,
+        app_state: Option<Vec<u8>>,
     ) -> Self {
         Snapshot {
             snapshot_id,
@@ -270,6 +275,7 @@ impl Snapshot {
             committed_up_to,
             high_qc: high_qc.map(SerializableQC::from_qc),
             next_hash,
+            app_state,
         }
     }
 
@@ -496,6 +502,7 @@ mod tests {
                 },
             ],
             next_hash: 2,
+            app_state: None,
         }
     }
 

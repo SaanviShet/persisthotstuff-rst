@@ -192,6 +192,12 @@ impl Simulation {
             keystore,
             wal: None,
             snapshot_counter: 0,
+            app: None,
+            pending_app_state: None,
+        client_queue: Vec::new(),
+        dummy_proposal_enabled: false,
+        last_proposed_time: 0,
+        dummy_timeout_ms: 0,
         };
         replica.ensure_default_validators();
         replica.block_tree.insert(0, Self::genesis_block());
@@ -275,8 +281,9 @@ impl Simulation {
             .replicas
             .iter()
             .enumerate()
-            .find(|(idx, _)| !self.is_crashed(*idx))
+            .filter(|(idx, _)| !self.is_crashed(*idx))
             .map(|(_, r)| r.current_view)
+            .max()
             .unwrap_or(0);
 
         for offset in 0..self.replicas.len() {
@@ -340,10 +347,25 @@ impl Simulation {
         let unique_hash = self.network.generate_unique_hash();
         let proposal = self.replicas[leader_id].propose_with_hash(current_view, unique_hash);
         if proposal.is_none() {
+            // Leader could not propose (e.g. view mismatch after skew).  Treat
+            // as a view timeout so live replicas advance and the simulation
+            // keeps running — this is NOT a terminal condition.
             if self.verbose {
-                println!("  [FAIL] Leader failed to propose");
+                println!("  [SKIP] Leader {} could not propose for view {} — view timeout",
+                         leader_id, current_view);
             }
-            return false;
+            for (idx, replica) in self.replicas.iter_mut().enumerate() {
+                if crashed.contains(&idx) || unresponsive.contains(&idx) {
+                    continue;
+                }
+                replica.on_view_timeout();
+                if idx < self.last_response_ms.len() {
+                    self.last_response_ms[idx] = self.simulated_time_ms;
+                }
+            }
+            self.step += 1;
+            self.process_timeout_crashes();
+            return true;
         }
         
         let block = proposal.unwrap();
@@ -615,6 +637,64 @@ impl Simulation {
 
         recovered.attach_wal(wal);
 
+        // ── State sync: catch up from a live replica ──────────────────
+        //
+        // After crash-recovery the replica only has blocks/commits that
+        // were in its WAL + snapshot.  Blocks proposed while it was down
+        // are missing.  In a real system a "catch-up" protocol would
+        // fetch them from peers.  Here we simulate that by copying
+        // missing blocks, the committed log prefix, and the high_qc
+        // from a live replica.
+        if let Some(donor_idx) = self
+            .replicas
+            .iter()
+            .enumerate()
+            .find(|(idx, _)| *idx != replica_id && !self.is_crashed(*idx))
+            .map(|(idx, _)| idx)
+        {
+            // 1. Import missing blocks into the recovered block tree.
+            for (hash, block) in &self.replicas[donor_idx].block_tree {
+                if !recovered.block_tree.contains_key(hash) {
+                    recovered.block_tree.insert(*hash, block.clone());
+                }
+            }
+
+            // 2. Adopt the donor's committed log if it is longer AND is
+            //    a valid extension (common prefix matches).
+            let donor_log = &self.replicas[donor_idx].committed_log;
+            if donor_log.len() > recovered.committed_log.len() {
+                let prefix_ok = recovered
+                    .committed_log
+                    .iter()
+                    .zip(donor_log.iter())
+                    .all(|(a, b)| a.hash == b.hash);
+
+                if prefix_ok {
+                    recovered.committed_log = donor_log.clone();
+                    recovered.committed_up_to =
+                        self.replicas[donor_idx].committed_up_to;
+                }
+            }
+
+            // 3. Adopt the donor's high_qc if it is newer.
+            if let Some(donor_qc) = &self.replicas[donor_idx].high_qc {
+                let dominated = match &recovered.high_qc {
+                    Some(hq) => (donor_qc.epoch, donor_qc.view) > (hq.epoch, hq.view),
+                    None => true,
+                };
+                if dominated {
+                    recovered.high_qc = Some(donor_qc.clone());
+                }
+            }
+
+            // 4. Ensure next_hash doesn't collide with any known block.
+            if let Some(&max_hash) = recovered.block_tree.keys().max() {
+                if max_hash >= recovered.next_hash {
+                    recovered.next_hash = max_hash + 1;
+                }
+            }
+        }
+
         // Rejoin with a view at least as high as live replicas.
         let target_view = self
             .replicas
@@ -634,6 +714,14 @@ impl Simulation {
         self.unresponsive_replicas.remove(&replica_id);
         self.mark_responded(replica_id);
 
+        // Force a snapshot so the state-synced blocks / committed log /
+        // high_qc are persisted.  Without this, the next crash-recovery
+        // would replay a stale WAL whose commit_index values skip over
+        // the catch-up commits we just imported.
+        if let Some(dir) = self.replica_data_dirs.get(replica_id).cloned() {
+            let _ = self.replicas[replica_id].take_snapshot(&dir);
+        }
+
         Ok(())
     }
 
@@ -645,6 +733,11 @@ impl Simulation {
         rounds_during_crash: usize,
         rounds_after_recovery: usize,
     ) -> Result<(), String> {
+        // Auto-recover a victim still crashed from a previous cycle.
+        if self.is_crashed(replica_id) {
+            self.recover_replica(replica_id)?;
+        }
+
         for _ in 0..rounds_before_crash {
             if !self.run_one_round() {
                 break;
@@ -823,5 +916,227 @@ impl Simulation {
             }
             println!();
         }
+    }
+
+    // ===== Enhanced Pacemaker: Dummy Proposals =====
+
+    /// Enable dummy-proposal injection on all replicas.
+    ///
+    /// When enabled, leaders will propose NoOp blocks during idle rounds
+    /// to keep the 3-chain growing so that pending client commands can
+    /// commit without further client activity.
+    ///
+    /// # Arguments
+    /// * `timeout_ms` – idle threshold before a dummy is injected
+    pub fn enable_dummy_proposals(&mut self, timeout_ms: u64) {
+        for replica in &mut self.replicas {
+            replica.enable_dummy_proposals(timeout_ms);
+        }
+    }
+
+    /// Disable dummy-proposal injection on all replicas.
+    pub fn disable_dummy_proposals(&mut self) {
+        for replica in &mut self.replicas {
+            replica.disable_dummy_proposals();
+        }
+    }
+
+    /// Enqueue a client command on the current leader.
+    ///
+    /// The command will be proposed in the next round if this replica
+    /// is still the leader.
+    pub fn enqueue_client_command(&mut self, cmd: crate::types::ConsensusCommand) {
+        let leader = self.current_leader();
+        self.replicas[leader].enqueue_command(cmd);
+    }
+
+    /// Run one round using the enhanced pacemaker.
+    ///
+    /// Unlike [`run_one_round`], the leader uses
+    /// [`propose_next_with_hash`] which prefers queued client commands
+    /// and falls back to dummy NoOp blocks when the pacemaker conditions
+    /// are met.  If neither condition holds, the round is skipped
+    /// (no proposal).
+    pub fn run_one_round_with_pacemaker(&mut self) -> bool {
+        self.advance_simulated_time();
+        self.process_timeout_crashes();
+
+        if self.step >= self.max_steps || self.crashed_replicas.len() == self.replicas.len() {
+            return false;
+        }
+
+        let crashed = self.crashed_replicas.clone();
+        let unresponsive = self.unresponsive_replicas.clone();
+
+        let leader_id = self.current_leader();
+        let current_view = self.replicas[leader_id].current_view;
+
+        if self.verbose {
+            let separator = "=".repeat(60);
+            println!("\n{}", separator);
+            println!("ROUND {} | View {} | Leader: Replica {} [pacemaker]",
+                     self.step + 1, current_view, leader_id);
+            println!("{}", separator);
+        }
+
+        // If the leader is unavailable, do a view timeout.
+        if self.is_crashed(leader_id) || unresponsive.contains(&leader_id) {
+            if self.verbose {
+                println!("  [FAIL] Leader {} is unavailable", leader_id);
+            }
+            for (idx, replica) in self.replicas.iter_mut().enumerate() {
+                if crashed.contains(&idx) || unresponsive.contains(&idx) {
+                    continue;
+                }
+                replica.on_view_timeout();
+            }
+            self.step += 1;
+            return true;
+        }
+
+        // The leader proposes using the enhanced pacemaker logic.
+        let unique_hash = self.network.generate_unique_hash();
+        let proposal = self.replicas[leader_id]
+            .propose_next_with_hash(current_view, unique_hash);
+
+        if proposal.is_none() {
+            // Neither a client command nor a dummy proposal is warranted.
+            if self.verbose {
+                println!("  [SKIP] No proposal warranted (queue empty, dummy not needed)");
+            }
+            // Still advance the view so the protocol makes progress.
+            for (idx, replica) in self.replicas.iter_mut().enumerate() {
+                if crashed.contains(&idx) || unresponsive.contains(&idx) {
+                    continue;
+                }
+                replica.advance_view_with_reason(ViewChangeReason::Commit);
+            }
+            self.step += 1;
+            return true;
+        }
+
+        let block = proposal.unwrap();
+        let is_dummy = block.command == crate::types::ConsensusCommand::NoOp;
+        self.mark_responded(leader_id);
+
+        if self.verbose {
+            let tag = if is_dummy { "DUMMY" } else { "CLIENT" };
+            println!("  ✓ [{}] Proposed Block {} (view {})",
+                     tag, block.hash, block.view);
+        }
+
+        // The rest of the round is identical to run_one_round:
+        // broadcast → vote → QC → commit → advance view.
+
+        self.network.broadcast_proposal(leader_id as u64, block.clone());
+
+        // Collect proposals.
+        let mut proposal_messages = Vec::new();
+        while self.network.has_messages() {
+            if let Some(msg) = self.network.receive() {
+                if matches!(msg, Message::Proposal { .. }) {
+                    proposal_messages.push(msg);
+                }
+            }
+        }
+
+        // Validate & vote.
+        for msg in proposal_messages {
+            if let Message::Proposal { from, to, block } = msg {
+                if crashed.contains(&(to as usize)) || unresponsive.contains(&(to as usize)) {
+                    continue;
+                }
+
+                let mut vote_to_send: Option<crate::types::Vote> = None;
+                {
+                    let replica = &mut self.replicas[to as usize];
+                    if replica.validate_and_insert_proposal(block.clone()) {
+                        let signature = replica.keystore.sign(block.hash, block.view, block.epoch);
+                        vote_to_send = Some(crate::types::Vote {
+                            block_hash: block.hash,
+                            view: block.view,
+                            epoch: block.epoch,
+                            signature,
+                        });
+                    }
+                }
+
+                if let Some(vote) = vote_to_send {
+                    if (to as usize) < self.last_response_ms.len() {
+                        self.last_response_ms[to as usize] = self.simulated_time_ms;
+                    }
+                    self.network.send_vote(to, from, vote);
+                }
+            }
+        }
+
+        // Collect votes and form QC.
+        let mut qc_formed = None;
+        while self.network.has_messages() {
+            if let Some(msg) = self.network.receive() {
+                if let Message::Vote { from: _, to, vote } = msg {
+                    if crashed.contains(&(to as usize)) || unresponsive.contains(&(to as usize)) {
+                        continue;
+                    }
+                    let formed_qc = self.replicas[to as usize].handle_vote(vote);
+                    if (to as usize) < self.last_response_ms.len() {
+                        self.last_response_ms[to as usize] = self.simulated_time_ms;
+                    }
+                    if let Some(qc) = formed_qc {
+                        qc_formed = Some(qc);
+                    }
+                }
+            }
+        }
+
+        // Broadcast QC.
+        if let Some(qc) = qc_formed {
+            self.network.broadcast_qc(leader_id as u64, qc.clone(), qc.block_hash);
+
+            while self.network.has_messages() {
+                if let Some(msg) = self.network.receive() {
+                    if let Message::QuorumCertBroadcast { to, qc, .. } = msg {
+                        if crashed.contains(&(to as usize)) || unresponsive.contains(&(to as usize)) {
+                            continue;
+                        }
+                        self.replicas[to as usize].apply_high_qc_from_network(qc);
+                        if (to as usize) < self.last_response_ms.len() {
+                            self.last_response_ms[to as usize] = self.simulated_time_ms;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Commit.
+        for (idx, replica) in self.replicas.iter_mut().enumerate() {
+            if crashed.contains(&idx) || unresponsive.contains(&idx) {
+                continue;
+            }
+            replica.commit_all();
+
+            if self.persistence_enabled && replica.should_snapshot() {
+                if let Some(dir) = self.replica_data_dirs.get(idx) {
+                    let _ = replica.take_snapshot(dir);
+                }
+            }
+            if idx < self.last_response_ms.len() {
+                self.last_response_ms[idx] = self.simulated_time_ms;
+            }
+        }
+
+        // Advance view.
+        for (idx, replica) in self.replicas.iter_mut().enumerate() {
+            if crashed.contains(&idx) || unresponsive.contains(&idx) {
+                continue;
+            }
+            replica.advance_view_with_reason(ViewChangeReason::Commit);
+            if idx < self.last_response_ms.len() {
+                self.last_response_ms[idx] = self.simulated_time_ms;
+            }
+        }
+
+        self.step += 1;
+        true
     }
 }

@@ -33,6 +33,12 @@ fn main() {
         keystore: keystores[0].clone(),
         wal: None,
         snapshot_counter: 0,
+        app: None,
+        pending_app_state: None,
+        client_queue: Vec::new(),
+        dummy_proposal_enabled: false,
+        last_proposed_time: 0,
+        dummy_timeout_ms: 0,
     };
 
     // Genesis
@@ -145,6 +151,12 @@ fn main() {
         keystore: keystores[1].clone(),
         wal: None,
         snapshot_counter: 0,
+        app: None,
+        pending_app_state: None,
+        client_queue: Vec::new(),
+        dummy_proposal_enabled: false,
+        last_proposed_time: 0,
+        dummy_timeout_ms: 0,
     };
 
     // Replica 2 has slightly different state (simulating network delay/partition)
@@ -200,6 +212,12 @@ fn main() {
         keystore: keystores[2].clone(),
         wal: None,
         snapshot_counter: 0,
+        app: None,
+        pending_app_state: None,
+        client_queue: Vec::new(),
+        dummy_proposal_enabled: false,
+        last_proposed_time: 0,
+        dummy_timeout_ms: 0,
     };
 
     // Replica 3 has same base but different fork

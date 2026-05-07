@@ -26,6 +26,12 @@ fn qc_formation_from_votes() {
         keystore: keystores[0].clone(),
         wal: None,
         snapshot_counter: 0,
+        app: None,
+        pending_app_state: None,
+        client_queue: Vec::new(),
+        dummy_proposal_enabled: false,
+        last_proposed_time: 0,
+        dummy_timeout_ms: 0,
     };
 
     let block_hash = 42u64;

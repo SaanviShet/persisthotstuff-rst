@@ -104,7 +104,9 @@ pub fn recover(
         mut current_view,
         mut next_hash,
         mut config_epoch,
-        mut active_validators,
+        active_validators,
+        pending_app_state,
+        snapshot_counter,
     ) = match Snapshot::load_latest(replica_id, data_dir) {
         Ok(snap) => {
             println!("Loaded snapshot #{} for replica {} (view {}, {} committed blocks)",
@@ -123,6 +125,12 @@ pub fn recover(
             let hqc: Option<QuorumCert> = snap.high_qc
                 .map(|sqc| sqc.to_qc());
 
+            let app_state = snap.app_state;
+
+            // Resume the counter one past the loaded snapshot so that
+            // future snapshots always get strictly higher sequence numbers.
+            let counter = snap.snapshot_id + 1;
+
             (
                 tree,
                 clog,
@@ -132,6 +140,8 @@ pub fn recover(
                 snap.next_hash,
                 snap.config_epoch,
                 snap.active_validators.into_iter().collect::<BTreeSet<_>>(),
+                app_state,
+                counter,
             )
         }
         Err(SnapshotError::NotFound) => {
@@ -141,7 +151,7 @@ pub fn recover(
             for id in 0..config.n {
                 validators.insert(id as ReplicaId);
             }
-            (BTreeMap::new(), Vec::new(), None, None, 0u64, 1u64, 0u64, validators)
+            (BTreeMap::new(), Vec::new(), None, None, 0u64, 1u64, 0u64, validators, None, 0u64)
         }
         Err(e) => {
             // Snapshot exists but is corrupt or unreadable.
@@ -219,7 +229,13 @@ pub fn recover(
         config_epoch,
         keystore,
         wal: None,
-        snapshot_counter: 0,
+        snapshot_counter,
+        app: None,
+        pending_app_state,
+        client_queue: Vec::new(),
+        dummy_proposal_enabled: false,
+        last_proposed_time: 0,
+        dummy_timeout_ms: 0,
     };
 
     println!("Recovery complete for replica {}", replica_id);
@@ -458,6 +474,7 @@ mod tests {
                 },
             ],
             next_hash: 1,
+            app_state: None,
         };
         snap.save(dir.path()).unwrap();
 

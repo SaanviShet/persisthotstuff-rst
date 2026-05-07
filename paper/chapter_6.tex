@@ -1,0 +1,55 @@
+%_____________________________________________________________________________________________ 
+% Chapter 6: Discussion
+%_____________________________________________________________________________________________ 
+\chapter{Discussion}
+\label{sec:discussion}
+
+\section{Design Trade-offs}
+
+\begin{itemize}
+  \item \textbf{In-memory block tree.}  We keep the entire block tree in RAM, which is fine
+    for thousands of blocks but will not scale to millions.  A natural extension is to page
+    older blocks to disk, using the WAL infrastructure that already exists.
+
+  \item \textbf{Consensus-driven membership.}  Routing membership changes through the
+    consensus log is simple but introduces latency (the change only takes effect after
+    3-chain commit).  Systems that need rapid reconfiguration might prefer a separate fast
+    path.
+
+  \item \textbf{No threshold signatures.}  QCs in our system carry $2f{+}1$ individual
+    Ed25519 signatures, which grows linearly in $f$.  Threshold (or aggregate) signatures
+    could compress a QC into a single short proof but add cryptographic complexity.  We
+    defer this optimisation to future work.
+\end{itemize}
+
+\section{Safety and Liveness}
+
+\textit{Safety.} The consensus core follows HotStuff's 3-chain commit rule without
+modification, so the original safety proof~\cite{hotstuff2019} applies.  The WAL and
+snapshots add durability but do not change when or how blocks are committed.  Dummy
+proposals are regular blocks that carry no-op commands; they pass through the same voting
+and QC pipeline, so they cannot weaken safety.  For dynamic membership, our TLA+
+specification (Section~\ref{sec:formal_verification}) provides machine-checked verification.
+
+\textit{Liveness.}  HotStuff guarantees liveness after Global Stabilisation Time (GST)
+assuming an honest leader.  Our pacemaker extension adds liveness under low load by ensuring
+the 3-chain always has enough blocks to make progress.  For dynamic membership, liveness
+depends on the new configuration having enough honest replicas, which is enforced by the
+$n' \ge 4 \wedge n' \bmod 3 = 1$ invariant.
+
+\section{Future Work}
+
+Several directions remain open:
+
+\begin{itemize}
+  \item \textbf{BLS / threshold signatures} to reduce QC size from $O(f)$ signatures to a
+    single constant-size proof.
+  \item \textbf{Pipelined HotStuff} --- overlapping multiple proposal rounds to improve
+    throughput beyond 1~commit/round.
+  \item \textbf{Disk-paged block tree} to handle long-running deployments with millions of
+    committed commands.
+  \item \textbf{Reputation-based leader rotation} to penalise repeatedly faulty or slow
+    leaders and improve practical latency.
+  \item \textbf{WASM plugin support} for sandboxed, untrusted state machine implementations
+    delivered as WASM modules.
+\end{itemize}
